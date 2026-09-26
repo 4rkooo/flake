@@ -99,10 +99,10 @@ if __name__ == "__main__":
     from flake.risk.pricing import propose_rules
 
     episodes = list(
-        db.episodes.find({"group_id": "friends", "status": "resolved"}).sort("_id")
+        db.episodes.find({"group_id": "taco-council", "status": "resolved"}).sort("_id")
     )
     profiles = {
-        doc["person"]: doc for doc in db.risk_profiles.find({"group_id": "friends"})
+        doc["person"]: doc for doc in db.risk_profiles.find({"group_id": "taco-council"})
     }
     v2 = propose_rules(profiles, [], {})["rules"]
 

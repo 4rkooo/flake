@@ -14,7 +14,7 @@ cost_per_person_usd number
 min_people          int
 version_id          str    harness_versions._id this plan ran under
 status              str    proposed -> booked -> resolved
-created_at, resolved_at   datetime
+created_at, resolved_at   str    ISO 8601 UTC, from memory.now()
 
 rsvps                list[{person: str, rsvp: "yes"|"no"}]
 
@@ -24,8 +24,8 @@ booking:
   deposit_usd        number
   premium_usd        number
 
-money_requests       list[{id, person, amount_usd, upfront: bool, at: datetime}]
-approvals            list[{tool: str, at: datetime}]
+money_requests       list[{id, person, amount_usd, upfront: bool, at: str}]
+approvals            list[{tool: str, at: str}]
 
 outcomes:                        # written by the world simulator after resolution
   showed              list[str]
@@ -48,7 +48,7 @@ version      int
 parent       str | null            # _id of the version this superseded/rolled back from
 status       str   candidate | rejected | canary | active | rolled_back | superseded
 created_by   str
-created_at   datetime
+created_at   str                    # ISO 8601 UTC, from memory.now()
 rationale    str                   # LLM's explanation
 
 policy: {                          # what the gate actually reads -- one nested dict
@@ -96,7 +96,7 @@ flake:     { n, k, alpha, beta, p_mean, p_upper90, credibility }
 pay_late:  { n, k, alpha, beta, p_mean, p_upper90, credibility }
 flake_score int   # 850 - 550 * p_mean
 by_day_type dict | null
-updated_at datetime
+updated_at str
 ```
 
 ## `audit_log` (Lane C owns)
@@ -111,7 +111,7 @@ final_args     dict
 decision       str   allow | modify | ask | deny
 rule_id        str | null
 reason         str
-ts             datetime
+ts             str   ISO 8601 UTC, from memory.now()
 ```
 
 ## Lane A's 7 tools
@@ -121,3 +121,9 @@ ts             datetime
 ## Other collections
 
 `groups`, `notes`, `checkpoints`, `checkpoint_writes` (LangGraph checkpointer, auto-created), `chat_log`.
+
+## Seed data
+
+The five scripted past plans (`ep_001`..`ep_005`) live in `src/flake/world/history.py` as `HISTORY`, full episode dicts
+for group `taco-council`. `scripts/seed.py` adds the embeddings and inserts them. `day_type` is `weekday | weekend`
+everywhere, so `simulator.day_type()` must return the same two values.
