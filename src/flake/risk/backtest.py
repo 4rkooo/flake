@@ -1,3 +1,4 @@
+from flake import observe
 from flake.world.people import PREMIUM_RATE
 
 
@@ -64,7 +65,7 @@ def run(candidate, incumbent, episodes):
 
     proposed = total(accepted, episodes)
     delta = base - proposed
-    return {
+    result = {
         "episodes": len(episodes),
         "baseline_usd": base,
         "proposed_usd": proposed,
@@ -74,6 +75,12 @@ def run(candidate, incumbent, episodes):
         "rejected": rejected,
         "details": details,
     }
+    # per-plan replay so a viewer can check the totals by hand
+    observe.emit("backtest.run", **result, incumbent=incumbent, candidate=candidate,
+                 per_episode=[{"_id": e.get("_id"), "title": e.get("title"), "share": e.get("cost_per_person_usd"),
+                               "bailed": e["outcomes"]["bailed"], "incumbent_usd": cost_under(incumbent, e),
+                               "candidate_usd": cost_under(accepted, e)} for e in episodes])
+    return result
 
 
 def _print_run(label, result):

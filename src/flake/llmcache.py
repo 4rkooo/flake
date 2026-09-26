@@ -16,6 +16,8 @@ from langchain_core.caches import RETURN_VAL_TYPE, BaseCache
 from langchain_core.globals import set_llm_cache
 from langchain_core.load import dumps, loads
 
+from flake import observe
+
 DEFAULT_PATH = ".llm_cache.sqlite"
 
 
@@ -31,20 +33,26 @@ class SQLiteCache(BaseCache):
         with self._lock:
             row = self._conn.execute("SELECT response FROM cache WHERE prompt = ? AND llm = ?",
                                      (prompt, llm_string)).fetchone()
-        if row is None:
-            return None
-        try:
-            with warnings.catch_warnings():     # loads() is flagged beta; the rows are our own
-                warnings.simplefilter("ignore", LangChainBetaWarning)
-                return loads(row[0], allowed_objects="core")
-        except Exception:
-            return None      # a row written by an older langchain; treat it as a miss
+        value = None
+        if row is not None:
+            try:
+                with warnings.catch_warnings():     # loads() is flagged beta; the rows are our own
+                    warnings.simplefilter("ignore", LangChainBetaWarning)
+                    value = loads(row[0], allowed_objects="core")
+            except Exception:
+                value = None     # a row written by an older langchain; treat it as a miss
+        # Leave the verdict for the caller on this thread (the agent node labels its turn with it)
+        # and tell any viewer whether this is a replay or a paid call.
+        observe.note("llm_cache", "hit" if value is not None else "miss")
+        observe.emit("llm.cache", hit=value is not None, prompt_chars=len(prompt))
+        return value
 
     def update(self, prompt: str, llm_string: str, return_val: RETURN_VAL_TYPE) -> None:
         with self._lock:
             self._conn.execute("INSERT OR REPLACE INTO cache (prompt, llm, response) VALUES (?, ?, ?)",
                                (prompt, llm_string, dumps(list(return_val))))
             self._conn.commit()
+        observe.emit("llm.cache.stored", prompt_chars=len(prompt))
 
     def clear(self, **kwargs) -> None:
         with self._lock:

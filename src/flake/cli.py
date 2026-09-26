@@ -26,7 +26,10 @@ def plan(brief: str) -> None:
     from .agent.graph import run_plan  # imported here so `flake seed` works without LLM keys
 
     ep = run_plan(GROUP, brief)
-    print(f"[bold]{ep['_id']}[/] booked under {ep['version_id']}: {ep.get('booking')}")
+    if ep.get("booking"):
+        print(f"[bold]{ep['_id']}[/] booked under {ep['version_id']}: {ep.get('booking')}")
+    else:   # turn limit or the model gave up: say so instead of claiming a booking
+        print(f"[bold red]{ep['_id']}[/] not booked under {ep.get('version_id')}: {ep.get('incomplete_reason')}")
 
 
 @app.command()

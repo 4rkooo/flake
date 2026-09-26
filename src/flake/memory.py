@@ -17,6 +17,7 @@ Collections used:
 import atexit
 from datetime import datetime, timezone
 from flake.config import db, embed   # db = Mongo database handle; embed(text) -> list[float]
+from flake import observe            # optional hooks; a no-op in the CLI
 import os
 from langgraph.store.mongodb import MongoDBStore, create_vector_index_config
 from flake.config import embedder
@@ -30,9 +31,18 @@ current_run: dict = {}          # group_id, plan_id for the run in progress; set
 index_config = create_vector_index_config(embed=embedder, dims=int(os.environ.get("EMBEDDING_DIMS", "1536")), fields=["text"])
 # keep the context manager referenced: if it is garbage-collected, it closes the store's
 # MongoClient and every later note write fails with "Cannot use MongoClient after close"
-_store_cm = MongoDBStore.from_conn_string(os.environ["MONGODB_URI"], db_name=os.environ.get("MONGODB_DB", "flake"),
-                                          collection_name="notes", index_config=index_config)
-store = _store_cm.__enter__()
+STORE_INDEX_ERROR: str | None = None   # set when the notes store had to give up its vector index
+try:
+    _store_cm = MongoDBStore.from_conn_string(os.environ["MONGODB_URI"], db_name=os.environ.get("MONGODB_DB", "flake"),
+                                              collection_name="notes", index_config=index_config)
+    store = _store_cm.__enter__()
+except Exception as _e:  # noqa: BLE001
+    # e.g. "maximum number of FTS indexes reached" on a small Atlas tier: keep notes as plain
+    # key-value memory rather than refusing to start; search_notes then reports the fallback
+    STORE_INDEX_ERROR = f"{type(_e).__name__}: {_e}"[:200]
+    _store_cm = MongoDBStore.from_conn_string(os.environ["MONGODB_URI"], db_name=os.environ.get("MONGODB_DB", "flake"),
+                                              collection_name="notes")
+    store = _store_cm.__enter__()
 atexit.register(_store_cm.__exit__, None, None, None)  # close before interpreter teardown, or it prints a traceback
 
 
@@ -70,6 +80,7 @@ def create_episode(**fields) -> str:
     doc = {"_id": current_run["plan_id"], "group_id": current_run["group_id"], "status": "proposed",
            "rsvps": [], "money_requests": [], "approvals": [], "created_at": now(), **fields}
     db.episodes.insert_one(doc)   # raises DuplicateKeyError if propose_plan is called twice
+    observe.emit("episode.created", plan_id=doc["_id"], group_id=doc["group_id"], fields=fields)
     return doc["_id"]
 
 
@@ -102,13 +113,16 @@ def add_approval(plan_id: str, tool: str) -> None:
     # NOTE: approval is by tool NAME only, not args: approving one book() call
     # approves any later book() call on this plan, whatever the amount.
     db.episodes.update_one({"_id": plan_id}, {"$push": {"approvals": {"tool": tool, "at": now()}}})
+    observe.emit("approval.recorded", plan_id=plan_id, tool=tool)
 
 
 def finish_episode(plan_id: str, summary: str) -> None:
     # Called by the finish_plan tool. Stores a one-paragraph summary AND its
     # embedding; that embedding is what similar_episodes() searches on for
     # future plans. Marks the plan booked (world.tick later sets "resolved").
-    update_episode(plan_id, {"summary": summary, "embedding": embed(summary), "status": "booked"})
+    vector = embed(summary)
+    update_episode(plan_id, {"summary": summary, "embedding": vector, "status": "booked"})
+    observe.emit("memory.embedded", plan_id=plan_id, dims=len(vector), summary=summary)
 
 
 # ---------------------------------------------------------------------------
@@ -117,8 +131,10 @@ def finish_episode(plan_id: str, summary: str) -> None:
 def chat(sender: str, text: str) -> None:
     # Append one chat line, tagged with the current group/plan.
     # .get() so it also works outside a run (e.g. seed script), storing None.
-    db.chat_log.insert_one({"group_id": current_run.get("group_id"), "plan_id": current_run.get("plan_id"),
-                            "sender": sender, "text": text, "at": now()})
+    line = {"group_id": current_run.get("group_id"), "plan_id": current_run.get("plan_id"),
+            "sender": sender, "text": text, "at": now()}
+    db.chat_log.insert_one(line)
+    observe.emit("chat.message", **{k: v for k, v in line.items() if k != "_id"})
 
 
 # ---------------------------------------------------------------------------
@@ -145,16 +161,24 @@ def similar_episodes(group_id: str, brief: str, k: int) -> list[dict]:
         # Return only what the prompt needs, plus the similarity score.
         {"$project": {"title": 1, "summary": 1, "outcomes": 1, "score": {"$meta": "vectorSearchScore"}}},
     ]
+    error = None
     try:
         hits = list(db.episodes.aggregate(pipeline))
-    except Exception:
+    except Exception as e:
         hits = []                      # index not built yet: fall back to recency
+        error = f"{type(e).__name__}: {e}"[:200]
+    method = "vector_search"
     if not hits:
-        # Fallback: the k most recent finished plans in this group.
-        # NOTE: no projection here, so these docs include the full embedding
-        # array; add a projection matching the one above before rendering.
-        hits = list(db.episodes.find({"group_id": group_id, "summary": {"$exists": True}})
+        # Fallback: the k most recent finished plans in this group, projected like the
+        # search results so the embedding never reaches the prompt.
+        method = "recency_fallback"
+        hits = list(db.episodes.find({"group_id": group_id, "summary": {"$exists": True}},
+                                     {"title": 1, "summary": 1, "outcomes": 1})
                     .sort("created_at", -1).limit(k))
+    # The demo labels vector hits (with scores) and the recency fallback explicitly.
+    observe.emit("memory.similar", group_id=group_id, brief=brief, k=k, method=method, error=error,
+                 hits=[{"_id": h.get("_id"), "title": h.get("title"), "score": h.get("score"),
+                        "summary": h.get("summary")} for h in hits])
     return hits
 
 def add_note(group_id: str, key: str, text: str) -> None:
@@ -162,6 +186,11 @@ def add_note(group_id: str, key: str, text: str) -> None:
 
 def search_notes(group_id: str, query: str, limit: int) -> list[str]:
     try:
-        return [item.value["text"] for item in store.search(("flake", group_id), query=query, limit=limit)]
-    except Exception:
-        return []
+        if STORE_INDEX_ERROR:
+            raise RuntimeError(f"notes have no vector index ({STORE_INDEX_ERROR})")
+        hits = [item.value["text"] for item in store.search(("flake", group_id), query=query, limit=limit)]
+        method, error = "store_search", None
+    except Exception as e:
+        hits, method, error = [], "fallback_empty", f"{type(e).__name__}: {e}"[:200]   # store index not ready
+    observe.emit("memory.notes", group_id=group_id, query=query, limit=limit, method=method, error=error, hits=hits)
+    return hits

@@ -8,7 +8,7 @@ Lane C's gate can each read it without a schema class in between.
 import os
 
 from ..config import db
-from .. import memory
+from .. import memory, observe
 from .constitution import clamp
 
 V1_POLICY = {
@@ -86,11 +86,15 @@ def create(
         "canary": None,
     }
     db.harness_versions.insert_one(doc)
+    observe.emit("version.created", version_id=doc["_id"], group_id=group_id, version=n, parent=doc["parent"],
+                 status=status, created_by=created_by, rationale=rationale, policy=policy, backtest=backtest,
+                 constitution_notes=notes)
     return doc["_id"]
 
 
 def set_status(version_id: str, status: str, extra: dict | None = None) -> None:
     db.harness_versions.update_one({"_id": version_id}, {"$set": {"status": status, **(extra or {})}})
+    observe.emit("version.status", version_id=version_id, status=status, extra=extra or {})
 
 
 def promote(version_id: str) -> None:

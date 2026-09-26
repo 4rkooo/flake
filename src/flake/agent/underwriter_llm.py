@@ -1,5 +1,6 @@
 from typing import Literal
 from pydantic import BaseModel, Field
+from flake import observe
 from flake.config import llm
 from flake.risk import pricing
 
@@ -57,6 +58,8 @@ def propose(policy: dict, risk: dict, losses: list[dict], floors: dict) -> Polic
     # math decides, the LLM only words it: rules and caps always come from pricing,
     # so a model answer can't add rules or push the caps up to the constitution's floors
     decided = pricing.propose_rules(risk, losses, policy)
+    observe.emit("proposal.pricing", rules=decided["rules"], guardrails=decided["guardrails"],
+                 auto_book_nonrefundable=decided["auto_book_nonrefundable"], rationale=decided["rationale"])
     try:
         # function_calling: the answer is cached as plain tool-call data. The default (json_schema)
         # attaches a parsed pydantic object the cache can't load back, so every run was a miss
@@ -64,8 +67,12 @@ def propose(policy: dict, risk: dict, losses: list[dict], floors: dict) -> Polic
             rules="\n".join(f"{i + 1}. {r['type']} {', '.join(r['people'])}" for i, r in enumerate(decided["rules"])),
             guardrails=decided["guardrails"], risk=_risk_lines(risk), losses=_loss_lines(losses)))
         decided = {**decided, "rationale": words.rationale}
-        if len(words.reasons) == len(decided["rules"]):   # a miscounted answer keeps pricing's own reasons
+        matched = len(words.reasons) == len(decided["rules"])
+        if matched:   # a miscounted answer keeps pricing's own reasons
             decided["rules"] = [{**r, "reason": why} for r, why in zip(decided["rules"], words.reasons)]
-    except Exception:
-        pass                                              # network off: pricing's own wording
+        observe.emit("proposal.worded", rationale=words.rationale, reasons=words.reasons, reasons_applied=matched,
+                     cache=observe.take("llm_cache", "off"))
+    except Exception as e:
+        # network off: pricing's own wording. The demo labels this as the deterministic fallback.
+        observe.emit("proposal.fallback", error=f"{type(e).__name__}: {e}"[:200], rationale=decided["rationale"])
     return PolicyProposal(**decided)
