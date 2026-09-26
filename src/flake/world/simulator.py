@@ -1,12 +1,14 @@
+"""Outcomes arrive late, repeatably; rsvp, book, organizer_answer, resolve, tick -- owned by Lane B."""
+
 import random
 from datetime import date, timedelta
 
 from flake.config import db, DEMO_SEED
 from flake.world.people import LATE_DAYS, ORGANIZER, PEOPLE, PREMIUM_RATE
 
-# TODO: flake/memory.py does not exist yet. The db.episodes / db.notes writes
-# below should be switched to Lane A's add_note, update_episode and
-# finish_episode once that module lands.
+# TODO: flake/memory.py exists but does not yet expose add_note, update_episode
+# or finish_episode. The db.episodes / db.notes writes below should move to
+# Lane A's functions once those land.
 
 rng = random.Random(DEMO_SEED)
 
