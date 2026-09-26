@@ -3,67 +3,19 @@ for Atlas, a hash stands in for the embedder, and the LLM always fails so the
 Retro takes the deterministic fallback. Not covered here: a live `flake plan`
 through the LLM, $vectorSearch, LangSmith -- those need Atlas and keys.
 
-Run: uv run pytest tests/test_guide_checks.py
+The fakes live in tests/conftest.py. Run: uv run pytest tests/
 """
 import copy
-import hashlib
 import runpy
-import sys
-import types
 
-import mongomock
 import pytest
 
-# --- fakes, installed before anything imports flake.config -------------------
-cfg = types.ModuleType("flake.config")
-cfg.db = mongomock.MongoClient()["flake"]
-cfg.embed = lambda text: [b / 255 for b in hashlib.sha256(text.encode()).digest()] * 48  # 1536 dims
+from flake.config import db  # conftest's mongomock database
+from flake import memory
+from flake.harness import canary, gate, retro, versions
+from flake.risk import backtest, model, pricing
+from flake.world import simulator
 
-
-class _NoLLM:  # "network off": underwriter_llm.propose must fall back to pricing
-    def with_structured_output(self, *_a, **_k):
-        raise RuntimeError("network off")
-
-    def bind_tools(self, *_a, **_k):
-        return self
-
-
-cfg.llm, cfg.embedder, cfg.DEMO_SEED, cfg.LLM_CACHE_PATH = _NoLLM(), None, 42, None
-sys.modules["flake.config"] = cfg
-
-
-class _Store:  # memory.py opens a LangGraph Mongo store at import
-    def __init__(self):
-        self.items = []
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        return None
-
-    def put(self, ns, key, value, **_):
-        self.items.append((ns, key, value))
-
-    def search(self, ns, query=None, limit=10, **_):
-        return [types.SimpleNamespace(key=k, value=v) for n, k, v in self.items if n == ns][:limit]
-
-
-store_mod = types.ModuleType("langgraph.store.mongodb")
-store_mod.MongoDBStore = types.SimpleNamespace(from_conn_string=lambda *a, **k: _Store())
-store_mod.create_vector_index_config = lambda **k: None
-sys.modules["langgraph.store.mongodb"] = store_mod
-
-import os  # noqa: E402
-
-os.environ.setdefault("MONGODB_URI", "mongodb://fake")
-
-from flake import memory  # noqa: E402
-from flake.harness import canary, gate, retro, versions  # noqa: E402
-from flake.risk import backtest, model, pricing  # noqa: E402
-from flake.world import simulator  # noqa: E402
-
-db = cfg.db
 G = "taco-council"
 EVERYONE = ["sam", "priya", "jordan", "maya", "alex"]
 
@@ -218,3 +170,21 @@ def test_bail_notes_go_through_the_store(seeded):
     simulator._add_note(ep, "sam", "weekday", 30)
     assert db.notes.count_documents({}) == 0
     assert any(k == "sam-ep_098" and "bailed on Karaoke" in v["text"] for _, k, v in memory.store.items)
+
+
+def test_deposit_denial_spells_out_the_next_call(seeded):
+    # live runs showed the model dropping Jordan from the booking instead of requesting his deposit
+    _, profiles = seeded
+    policy = {**versions.V1_POLICY, "rules": [{"id": "r2", "type": "require_deposit_from", "people": ["jordan"], "reason": "late"}]}
+    db.episodes.insert_one({"_id": "ep_097", "group_id": G, "cost_per_person_usd": 120, "money_requests": [], "rsvps": []})
+    memory.current_run.update({"group_id": G, "plan_id": "ep_097"})
+    d = gate.check("book", {"non_refundable_for": EVERYONE, "refundable_for": []}, policy, profiles, [])
+    assert d.action == "deny"
+    assert 'request_money(plan_id="ep_097", person="jordan", amount_usd=120, upfront=True)' in d.reason
+    assert "retry" in d.reason and "do not remove" in d.reason.lower()
+    db.episodes.delete_one({"_id": "ep_097"})
+
+
+def test_prompt_forbids_dropping_people_to_dodge_a_rule():
+    from flake.agent import prompts
+    assert "never remove" in prompts.SYSTEM.lower()
