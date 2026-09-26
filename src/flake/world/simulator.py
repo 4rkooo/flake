@@ -14,7 +14,7 @@ rng = random.Random(DEMO_SEED)
 
 SCRIPT = {"sam": {"ep_006": "bail", "ep_007": "bail"}}
 
-WEEKDAY_DAY_TYPES = {5: "saturday", 6: "sunday"}
+WEEKDAY_DAY_TYPES = {5: "weekend", 6: "weekend"}  # schema.md: weekday | weekend
 
 
 def day_type(iso_day):
@@ -127,7 +127,7 @@ if __name__ == "__main__":
         "group_id": "friends",
         "title": "Beach weekend",
         "day": "2026-10-03",
-        "day_type": "saturday",
+        "day_type": "weekend",
         "cost_per_person_usd": 80,
         "status": "booked",
         "summary": "Beach weekend, $80 each.",

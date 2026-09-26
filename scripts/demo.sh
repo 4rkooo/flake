@@ -1,5 +1,7 @@
 #!/bin/sh
 # each line is one beat; the narrator reads the demo chapter
+# both retros backtest over every resolved plan, including the live ones, so their deltas will not be
+# the guide's +/-$218 (5 seeded plans only): read the "backtest over N past plans" line off the screen
 set -e
 python scripts/reset_demo.py
 flake versions
