@@ -3,6 +3,7 @@ import random
 from scipy.stats import beta as beta_dist
 
 from flake.config import db, DEMO_SEED
+from flake.risk.scores import flake_score
 from flake.world.people import PEOPLE
 
 PRIOR_ALPHA = 0.5
@@ -58,7 +59,7 @@ def build_profiles(group_id, episodes):
             "flake": flake_post,
             "pay_late": posterior(late_n, late_k),
             "by_day_type": by_day_type,
-            "flake_score": round(850 - 550 * flake_post["p_mean"]),
+            "flake_score": flake_score(flake_post["p_mean"]),
         }
         db.risk_profiles.replace_one({"_id": doc["_id"]}, doc, upsert=True)
         profiles[person] = doc
