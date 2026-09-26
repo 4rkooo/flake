@@ -3,7 +3,7 @@
 Each is a full episode dict (group_id "taco-council", status "resolved", outcomes, summary).
 scripts/seed.py (Lane C) adds the embeddings and inserts them.
 """
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from flake.world.people import PEOPLE, ORGANIZER
 
@@ -104,6 +104,11 @@ def summarize(spec, lost):
     )
 
 
+def _iso_utc(day):
+    # same shape as memory.now() (UTC ISO string), so past and live episodes sort together on resolved_at
+    return datetime.fromisoformat(day).replace(tzinfo=timezone.utc).isoformat()
+
+
 def build_episode(spec):
     people = list(PEOPLE)
     share = spec["cost_per_person_usd"]
@@ -141,8 +146,8 @@ def build_episode(spec):
         "version_id": None,
         "money_requests": [],
         "approvals": [],
-        "created_at": datetime.fromisoformat(spec["day"]),
-        "resolved_at": datetime.fromisoformat(spec["day"]),
+        "created_at": _iso_utc(spec["day"]),
+        "resolved_at": _iso_utc(spec["day"]),
     }
 
 

@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 from flake.world.history import GROUP_ID, HISTORY
 from flake.world.people import ORGANIZER, PEOPLE
@@ -20,12 +20,21 @@ def test_episodes_carry_the_schema_fields_readers_expect():
 def test_day_type_matches_the_calendar():
     for e in HISTORY:
         weekday = date.fromisoformat(e["day"]).weekday()
-        assert e["day_type"] == "weekend" if weekday >= 5 else "weekday"
+        assert e["day_type"] == ("weekend" if weekday >= 5 else "weekday")
 
 
 def test_day_types_are_only_weekday_or_weekend():
     assert {e["day_type"] for e in HISTORY} <= {"weekday", "weekend"}
     assert all(set(p["flake"]) == {"weekday", "weekend"} for p in PEOPLE.values())
+
+
+def test_timestamps_are_iso_strings_like_memory_now():
+    # memory.now() returns an ISO string; resolved_episodes sorts on resolved_at, so
+    # past and live plans must share a type or Mongo orders them by BSON type instead
+    for e in HISTORY:
+        for key in ("created_at", "resolved_at"):
+            assert isinstance(e[key], str), f"{e['_id']}.{key} is {type(e[key]).__name__}"
+            datetime.fromisoformat(e[key])
 
 
 def test_summary_names_the_actual_weekend_day():
