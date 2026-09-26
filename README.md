@@ -71,6 +71,35 @@ sh scripts/demo.sh          # the full demo; resets the database first
 
 `scripts/demo.sh` runs these in order: reset, show v1 on probation, run a plan, resolve it, run the Retro (v2 becomes a canary), diff v1 and v2, run a second plan under v2, resolve it (v2 is promoted), then try the reckless proposal (v3 is rejected).
 
+## Visual demo
+
+A presenter-controlled web demo runs the same script beat by beat: a WhatsApp-style group chat on the left, a live diagram of the two loops on the right, an activity feed underneath, and clickable approvals wherever the gate would ask Alex.
+
+```sh
+cd frontend && npm install && npm run build && cd ..   # the UI, once (Node 22)
+uv run flake-demo                                      # http://127.0.0.1:8000
+```
+
+Press **Next Beat**. The first beat resets the demo database, then the beats follow the presentation table: Taco Tuesday, Advance 7 days, Run Retro, Compare policies, Beach Weekend, Advance / evaluate, Reckless Retro. **Reset Demo** cancels whatever is running, releases any approval, clears the demo documents (collections and vector indexes stay), reseeds history and v1, and gives the browser a new session. Refreshing the browser rebuilds the view from the server's event journal; restarting the server needs a fresh reset.
+
+- **Database.** The demo uses its own database, `${MONGODB_DB}_demo` by default (override with `FLAKE_DEMO_DB` or `--db`), with the same Atlas credentials. Its vector indexes are created on first start and on reset, with a bounded wait; until they are queryable, searches fall back to recency and the feed says so. Small Atlas tiers allow **three search indexes per cluster**: the CLI database uses two, so the demo database gets `episodes_vec` (similar plans) and its notes store runs without a vector index (the feed labels note lookups as a fallback). To give the demo both, drop the `flake.notes` index in Atlas or run `uv run flake-demo --db flake`.
+- **Model calls.** The LLM cache is shared with the CLI (`.llm_cache.sqlite`), so a rehearsed run replays; every model turn in the feed is labelled `cache hit` or `fresh call`, every retrieval `$vectorSearch` or `vector-search fallback`, and a Retro whose model call failed says `deterministic fallback`.
+- **Approvals.** When `ask_organizer` runs, the question appears in the chat with Approve / Decline and the tool call waits for the click. A second click on the same request is ignored. The CLI (`flake plan`) keeps its scripted "yes".
+- **Offline rehearsal.** `uv run flake-demo --fake` needs no keys or network: an in-memory database and a scripted model that books everyone non-refundable and then does what the gate tells it. The gate, risk maths, backtest and canary run for real.
+- **Pace.** Cached model calls would finish a beat in a second, so the worker holds each step on screen for a few seconds before moving on: the node stays lit, the edge animates, the row lands, then the next step runs. At Normal a plan beat takes about two minutes, the Retro about half a minute. The top bar's Pace control (Slow / Normal / Fast / Instant) scales this live, `--pace` or `FLAKE_DEMO_PACE` sets the start value, and a reset never waits for a pause.
+- **Frontend development.** `uv run flake-demo` in one terminal, `cd frontend && npm run dev` in another (Vite on :5173 proxies `/api` to :8000).
+
+HTTP surface: `GET /api/state` (beat, pending approvals, display data, event cursor, the journal), `GET /api/events` (Server-Sent Events; `?since=&session=` or `Last-Event-ID` resumes), `POST /api/next`, `POST /api/approvals/{id}` with `{"decision": "approve"|"decline"}`, `POST /api/reset`.
+
+### Tests
+
+```sh
+uv run pytest                 # unit tests, plus the whole script driven through the coordinator with a scripted model
+cd frontend && npm run build && npx playwright install chromium && npm run test:e2e   # desktop and narrow layouts against --fake
+```
+
+If Chromium refuses to start for want of `libnss3`/`libasound2` and you cannot install packages, download them (`apt-get download libnss3 libnspr4 libasound2t64`), extract with `dpkg -x`, and run the e2e tests with `PW_CHROMIUM_LD_LIBRARY_PATH=<dir>/usr/lib/x86_64-linux-gnu`.
+
 ## Data model
 
 Everything lives in one MongoDB database, so the agent's working memory and its long-term memory sit side by side.
