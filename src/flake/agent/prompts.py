@@ -4,6 +4,7 @@ This plan: {plan_brief}
 
 Do these in order: propose_plan, poll_rsvps, decide the booking, book, request_money for each yes, finish_plan.
 Put every yes-RSVP person in exactly one booking list. Keep messages to one line. Never invent people.
+Never remove someone from a booking to get around a rule: if the gate says a deposit is needed, request it, then retry the same booking.
 POLICY {version_id} (enforced by a gate: a call that breaks it is modified, sent to Alex, or denied, and you are told why)
 Rules:
 {rules}

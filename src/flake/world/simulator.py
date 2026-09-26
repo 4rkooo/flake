@@ -3,18 +3,18 @@
 import random
 from datetime import date, timedelta
 
+from flake import memory
 from flake.config import db, DEMO_SEED
 from flake.world.people import LATE_DAYS, ORGANIZER, PEOPLE, PREMIUM_RATE
 
-# TODO: flake/memory.py exists but does not yet expose add_note, update_episode
-# or finish_episode. The db.episodes / db.notes writes below should move to
-# Lane A's functions once those land.
+# TODO: the db.episodes writes below should move to memory.update_episode /
+# finish_episode (they exist now). Notes already go through memory.add_note.
 
 rng = random.Random(DEMO_SEED)
 
 SCRIPT = {"sam": {"ep_006": "bail", "ep_007": "bail"}}
 
-WEEKDAY_DAY_TYPES = {5: "saturday", 6: "sunday"}
+WEEKDAY_DAY_TYPES = {5: "weekend", 6: "weekend"}  # schema.md: weekday | weekend
 
 
 def day_type(iso_day):
@@ -41,16 +41,10 @@ def organizer_answer(question):
 
 
 def _add_note(episode, person, dt, share):
-    db.notes.insert_one(
-        {
-            "group_id": episode["group_id"],
-            "episode_id": episode["_id"],
-            "person": person,
-            "text": (
-                f"{person} bailed on {episode['title']} ({dt}, ${share} share)"
-            ),
-        }
-    )
+    # through Lane A's store, not db.notes directly: the store keys its documents,
+    # and raw inserts make its startup backfill hit a duplicate-key error
+    memory.add_note(episode["group_id"], f"{person}-{episode['_id']}",
+                    f"{person} bailed on {episode['title']} ({dt}, ${share} share)")
 
 
 def resolve(episode):
@@ -127,7 +121,7 @@ if __name__ == "__main__":
         "group_id": "friends",
         "title": "Beach weekend",
         "day": "2026-10-03",
-        "day_type": "saturday",
+        "day_type": "weekend",
         "cost_per_person_usd": 80,
         "status": "booked",
         "summary": "Beach weekend, $80 each.",

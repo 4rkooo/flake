@@ -15,6 +15,9 @@ llm = ChatOpenAI(
     api_key=os.environ["OPENROUTER_API_KEY"],
     base_url="https://openrouter.ai/api/v1",
     temperature=0,
+    # without a cap, OpenRouter reserves the model's full output limit (65k tokens) per call,
+    # which a low credit balance rejects with 402; tool calls and proposals fit easily in this
+    max_tokens=int(os.environ.get("LLM_MAX_TOKENS", "1024")),
 )
 
 embedder = OpenAIEmbeddings(model="text-embedding-3-small",

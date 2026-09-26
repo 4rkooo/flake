@@ -30,7 +30,7 @@ def plan(brief: str) -> None:
 
 
 @app.command()
-def tick(days: int = 7) -> None:
+def tick(days: int = typer.Argument(7)) -> None:  # Argument so `flake tick 7` works; a plain default would be --days
     for plan_id in simulator.tick(days):
         ep = memory.get_episode(plan_id)
         print(f"{plan_id}: {ep['outcomes']}")
@@ -52,7 +52,11 @@ def retro_cmd(reckless: bool = False) -> None:
         f, l = prof["flake"], prof["pay_late"]
         t.add_row(p, str(f["n"]), str(f["k"]), f"{f['p_mean']:.2f}", f"{f['p_upper90']:.2f}", f"{l['p_mean']:.2f}", str(prof["flake_score"]))
     print(t)
-    print(out["backtest"])
+    bt = out["backtest"]
+    # the delta replays every resolved plan, so it grows as live plans resolve: narrate this line, not a memorized number
+    colour = "green" if bt["delta_usd"] >= 0 else "red"
+    print(f"backtest over {bt['episodes']} past plans: current policy ${bt['baseline_usd']:.2f}, "
+          f"proposed ${bt['proposed_usd']:.2f} -> [bold {colour}]{bt['delta_usd']:+.2f}[/]")
     print(f"[bold]{out['version_id']} -> {out['status']}[/]")
 
 
