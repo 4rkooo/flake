@@ -1,3 +1,5 @@
+import copy
+
 # Floors the policy can never cross, however the Retro proposes it. This is
 # the answer to "what stops it going rogue" -- code, not a promise.
 
@@ -16,6 +18,7 @@ def clamp(policy: dict) -> tuple[dict, list[str]]:
     Returns (clamped_policy, notes) -- notes is stored as constitution_notes
     on the version, so a judge asking "what if it proposes $999" gets shown one.
     """
+    policy = copy.deepcopy(policy)  # never edit the caller's dict (V1_POLICY is shared)
     notes = []
     g = policy["guardrails"]
     for key in ("max_nonrefundable_exposure_usd", "max_auto_spend_usd"):

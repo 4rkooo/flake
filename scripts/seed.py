@@ -9,6 +9,9 @@ COLLECTIONS = ("episodes", "risk_profiles", "notes")  # wiped per group so re-se
 
 
 def main():
+    # receipts are keyed by plan, not group, so find this group's plans first
+    plan_ids = [e["_id"] for e in db.episodes.find({"group_id": GROUP_ID}, {"_id": 1})]
+    print(f"deleted {db.audit_log.delete_many({'episode_id': {'$in': plan_ids}}).deleted_count} from audit_log")
     for name in COLLECTIONS:
         deleted = db[name].delete_many({"group_id": GROUP_ID}).deleted_count
         print(f"deleted {deleted} from {name}")
