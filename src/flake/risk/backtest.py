@@ -69,7 +69,7 @@ def run(candidate, incumbent, episodes):
         "baseline_usd": base,
         "proposed_usd": proposed,
         "delta_usd": delta,
-        "decision": "ship" if delta > 0 else "reject",
+        "decision": "reject" if delta < 0 else "ship",
         "accepted": accepted,
         "rejected": rejected,
         "details": details,
