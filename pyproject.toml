@@ -1,0 +1,31 @@
+[project]
+name = "flake"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "4rkooo", email = "143685534+4rkooo@users.noreply.github.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "langchain>=1.4.2",
+    "langchain-openai>=1.6.6",
+    "langgraph>=1.2.12",
+    "langgraph-checkpoint-mongodb>=0.5.0",
+    "langgraph-store-mongodb>=0.4.0",
+    "langsmith>=0.14.1",
+    "numpy>=2.5.3",
+    "pydantic>=2.13.5",
+    "pymongo>=4.17.0",
+    "python-dotenv>=1.2.3",
+    "rich>=15.0.0",
+    "scipy>=1.18.1",
+    "typer>=0.27.2",
+]
+
+[project.scripts]
+flake = "flake.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
