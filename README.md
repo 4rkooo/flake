@@ -95,3 +95,20 @@ So that the demo repeats identically, some inputs are fixed on purpose:
 - **Scripted Sam.** In the two live plans, Sam bails on cue instead of by dice roll.
 - **A reckless proposal.** `flake retro --reckless` feeds the Retro a deliberately bad proposal (no rules, caps at the floors). The backtest's negative dollar figure is real; only the proposal is staged.
 - **Replayed model calls.** Identical LLM calls are cached on disk (`.llm_cache.sqlite`), so re-running a plan replays the recorded model output instead of calling the API again. The cache is keyed on the exact prompt and model, so changing the policy, the prompt or `LLM_MODEL` produces a fresh call. The gate, the backtest and the canary are plain code and run live every time. For a cold run, delete `.llm_cache.sqlite`, or set `LLM_CACHE=0` to turn the cache off.
+
+## Visual demo (presenter view)
+
+`open demo/index.html` — no build step, no server, no dependencies.
+
+A WhatsApp-style Taco Council chat on the left, the planning and learning loops as a
+fixed diagram on the right, and a chronological activity feed with an inspector below it.
+**Next Beat** (or space) advances one beat at a time through the same eight beats as the CLI
+script; **Reset Demo** starts over. When the gate returns `ask`, the beat pauses and the
+presenter clicks Approve or Decline in the chat. Clicking an activity row pins its evidence in
+the inspector and highlights its diagram node; **Live** returns to following execution.
+
+The beats are recorded in [demo/script.js](demo/script.js): the figures shown (backtest deltas,
+clamp notes, canary expected vs realized cost, Beta posteriors) are the values the real
+`harness/` and `risk/` code produces over the seeded history, but this page does **not** call
+Python — it is a scripted replay for presenting. Wiring it to the live coordinator is a
+separate step.
