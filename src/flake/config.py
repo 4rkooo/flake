@@ -3,6 +3,8 @@ from dotenv import load_dotenv
 from pymongo import MongoClient
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
+from flake import llmcache
+
 load_dotenv()
 
 client = MongoClient(os.environ["MONGODB_URI"])
@@ -22,4 +24,7 @@ def embed(text: str) -> list[float]:
     return embedder.embed_query(text)
 
 DEMO_SEED = int(os.environ.get("DEMO_SEED", "42"))
+
+# Identical calls replay from disk instead of the paid API. LLM_CACHE=0 turns it off.
+LLM_CACHE_PATH = llmcache.install()
 
