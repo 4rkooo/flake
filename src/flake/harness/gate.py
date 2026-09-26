@@ -80,6 +80,12 @@ def check(tool: str, args: dict, policy: dict, risk: dict, approvals: list[dict]
             forecast = risk_model.attendance(risk, yes, episode.get("min_people", 1))
             if forecast["p_at_least_min"] < g["min_confidence"]:
                 problems.append(f"only {forecast['p_at_least_min']:.0%} confidence that {episode.get('min_people')} show")
+            # the guide's gate skips this floor; we enforce it so the field means something
+            ratio = forecast["expected"] / len(yes) if yes else 1
+            if ratio < g["min_expected_attendance_ratio"]:
+                problems.append(
+                    f"expected attendance {ratio:.0%} is under the {g['min_expected_attendance_ratio']:.0%} floor"
+                )
         if problems:
             mode, reason = "ask", "; ".join(problems)
 

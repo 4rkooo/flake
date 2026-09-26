@@ -1,0 +1,97 @@
+# Flake
+
+**Every group chat has a Sam.** Flake is the friend who plans things for the group and learns who actually shows up.
+
+Underneath it is a harness that rewrites its own rules after every plan, using the same math an insurer uses to price a policy. It starts on probation, earns the right to spend the group's money, and every version of its policy is stored, backtested, canaried and rollable in MongoDB Atlas.
+
+## How it works
+
+Flake is two loops sharing one database.
+
+- **The plan loop.** The agent reads memory, decides, and calls tools to propose a plan, collect RSVPs, book and request money. Every tool call passes through a **gate** that enforces the current policy. The gate can allow the call, modify it (for example, rewrite a non-refundable booking to refundable for someone who keeps bailing), ask the organizer, or deny it. Each decision is written to an append-only audit log.
+- **The Retro.** After outcomes land, a risk engine recomputes each friend's chance of bailing or paying late (Beta-Binomial, with credibility). An LLM words a policy proposal, anchored on a deterministic expected-loss suggestion. A backtest replays the proposal over past plans, and any rule that would have cost money is dropped. Survivors ship as a new policy version.
+
+```mermaid
+flowchart LR
+  A["Alex + group chat"] --> G["Flake agent<br/>LangGraph"]
+  G --> GT["Gate<br/>checks the policy"]
+  GT --> T["Tools"]
+  T --> W["World simulator<br/>hidden truth"]
+  W --> E[("episodes")]
+  G <--> M[("MongoDB Atlas<br/>memory + vector search")]
+  E --> R["Retro"]
+  R --> RK["Risk engine"]
+  RK --> P["LLM proposal"]
+  P --> B["Backtest"]
+  B --> V[("harness_versions")]
+  V --> GT
+```
+
+The arrow from `harness_versions` back into the gate is the recursion: what the Retro learns becomes the rules the next plan runs under.
+
+### A new policy is a deploy
+
+A new version runs as a **canary** on the next plan. If that plan costs no more than the old policy was expected to cost, it is promoted. If it costs more, it is rolled back and the previous version stays active.
+
+```mermaid
+stateDiagram-v2
+  [*] --> candidate: Retro proposes
+  candidate --> rejected: backtest loses money
+  candidate --> canary: backtest passes
+  canary --> active: next plan costs at most expected
+  canary --> rolled_back: next plan costs more
+  active --> superseded: newer version promoted
+```
+
+A **constitution** sets hard floors on the guardrails (exposure caps, minimum confidence). Every proposal is clamped to them, so the policy can rewrite its rules but not the floors, and it cannot skip the backtest.
+
+## Try it
+
+You need Python 3.13+, [uv](https://docs.astral.sh/uv/), a MongoDB Atlas cluster, and API keys for OpenRouter and OpenAI (embeddings).
+
+```sh
+cp .env.example .env        # fill in MONGODB_URI, OPENROUTER_API_KEY, OPENAI_API_KEY, ...
+uv sync
+uv run flake seed           # group, five past plans, v1 policy, first risk table
+uv run python scripts/create_indexes.py
+sh scripts/demo.sh          # the full demo; resets the database first
+```
+
+| Command | What it does |
+|---|---|
+| `flake seed` | Load the group, past plans and the v1 policy |
+| `flake plan "<brief>"` | Run the agent on a new plan |
+| `flake tick 7` | Let time pass: resolve booked plans and judge any canary |
+| `flake retro` | Run the Retro: risk table, backtest, new version |
+| `flake retro --reckless` | Feed the Retro a bad proposal to show the backtest veto |
+| `flake versions` | Every policy version with its status, caps and backtest result |
+| `flake diff v1 v2` | What changed between two versions |
+| `flake rollback` | Roll the active version back to its parent |
+| `flake audit <plan_id>` | Every gate decision for a plan |
+
+`scripts/demo.sh` runs these in order: reset, show v1 on probation, run a plan, resolve it, run the Retro (v2 becomes a canary), diff v1 and v2, run a second plan under v2, resolve it (v2 is promoted), then try the reckless proposal (v3 is rejected).
+
+## Data model
+
+Everything lives in one MongoDB database, so the agent's working memory and its long-term memory sit side by side.
+
+| Collection | Holds |
+|---|---|
+| `episodes` | Each plan: RSVPs, booking, money requests, approvals, outcomes, a summary and its 1536-dim embedding for vector search |
+| `harness_versions` | Every policy version: rules, guardrails, tool permissions, context policy, backtest result, canary result, status |
+| `risk_profiles` | Per-friend Beta-Binomial estimates for bailing and paying late, plus a Flake Score (850 - 550 x P(flake)) |
+| `audit_log` | One document per gate decision: tool, requested and final arguments, decision, the rule that fired |
+| `groups`, `chat_log`, `notes` | The group, its chat, and per-person facts searched by meaning |
+| `checkpoints`, `checkpoint_writes` | The LangGraph agent's working state, saved after every node |
+
+The full field-level contract is in [src/flake/schema.md](src/flake/schema.md).
+
+## What is scripted in the demo
+
+So that the demo repeats identically, some inputs are fixed on purpose:
+
+- **Scripted history.** The five past plans the group organized before Flake are typed in, not generated ([src/flake/world/history.py](src/flake/world/history.py)). Every number the Retro produces comes from them.
+- **Seeded randomness.** The simulator draws from a fixed seed (`DEMO_SEED`).
+- **Scripted Sam.** In the two live plans, Sam bails on cue instead of by dice roll.
+- **A reckless proposal.** `flake retro --reckless` feeds the Retro a deliberately bad proposal (no rules, caps at the floors). The backtest's negative dollar figure is real; only the proposal is staged.
+- **Replayed model calls.** Identical LLM calls are cached on disk (`.llm_cache.sqlite`), so re-running a plan replays the recorded model output instead of calling the API again. The cache is keyed on the exact prompt and model, so changing the policy, the prompt or `LLM_MODEL` produces a fresh call. The gate, the backtest and the canary are plain code and run live every time. For a cold run, delete `.llm_cache.sqlite`, or set `LLM_CACHE=0` to turn the cache off.

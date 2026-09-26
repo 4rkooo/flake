@@ -3,6 +3,7 @@ scripted fallback), B's backtest, then C's versions.
 """
 
 from .. import memory
+from ..config import db
 from ..agent import underwriter_llm
 from . import constitution, versions
 from ..risk import backtest, model as risk_model
@@ -25,6 +26,11 @@ RECKLESS = {
 
 
 def run(group_id: str, scripted: dict | None = None) -> dict:
+    # a canary judges exactly one plan; a second Retro now would muddy which version is on trial
+    on_trial = db.harness_versions.find_one({"group_id": group_id, "status": "canary"})
+    if on_trial:
+        raise RuntimeError(f"canary {on_trial['_id']} is still on trial; run `flake tick` first")
+
     episodes = memory.resolved_episodes(group_id)
     profiles = risk_model.build_profiles(group_id, episodes)
     incumbent = versions.get_active(group_id)
