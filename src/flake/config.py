@@ -22,3 +22,4 @@ def embed(text: str) -> list[float]:
     return embedder.embed_query(text)
 
 DEMO_SEED = int(os.environ.get("DEMO_SEED", "42"))
+
