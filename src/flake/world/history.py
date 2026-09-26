@@ -3,7 +3,7 @@
 Each is a full episode dict (group_id "taco-council", status "resolved", outcomes, summary).
 scripts/seed.py (Lane C) adds the embeddings and inserts them.
 """
-from datetime import date
+from datetime import date, datetime
 
 from flake.world.people import PEOPLE, ORGANIZER
 
@@ -38,7 +38,7 @@ EPISODE_SPECS = [
         "min_people": 3,
         "title": "Ski trip",
         "day": "2026-09-05",
-        "day_type": "saturday",
+        "day_type": "weekend",
         "cost_per_person_usd": 150,
         "bailed": ["sam"],
         "paid_late_days": {"jordan": 20, "priya": 0, "maya": 0},
@@ -49,7 +49,7 @@ EPISODE_SPECS = [
         "min_people": 3,
         "title": "Sunday brunch",
         "day": "2026-09-13",
-        "day_type": "sunday",
+        "day_type": "weekend",
         "cost_per_person_usd": 30,
         "bailed": [],
         "paid_late_days": {"jordan": 6, "sam": 7, "priya": 0, "maya": 0},
@@ -67,11 +67,11 @@ EPISODE_SPECS = [
     },
 ]
 
-WEEKDAY_DAY_TYPES = {5: "saturday", 6: "sunday"}
+WEEKEND_DAYS = (5, 6)  # Saturday, Sunday
 
 
 def day_type_of(day):
-    return WEEKDAY_DAY_TYPES.get(date.fromisoformat(day).weekday(), "weekday")
+    return "weekend" if date.fromisoformat(day).weekday() in WEEKEND_DAYS else "weekday"
 
 
 def check_day_type(spec):
@@ -92,7 +92,8 @@ def join_names(names):
 
 def summarize(spec, lost):
     day_type = spec["day_type"]
-    when = "a weekday" if day_type == "weekday" else f"a {day_type.capitalize()}"
+    # weekend loses which day it was, so name the actual day for the summary/embedding
+    when = "a weekday" if day_type == "weekday" else f"a {date.fromisoformat(spec['day']).strftime('%A')}"
     if spec["bailed"]:
         who = f"{join_names([p.capitalize() for p in spec['bailed']])} bailed"
     else:
@@ -136,6 +137,12 @@ def build_episode(spec):
             "total_cost_usd": lost,
         },
         "summary": summarize(spec, lost),
+        # pre-Flake plans: no harness version, no agent money requests/approvals; dated on the plan day
+        "version_id": None,
+        "money_requests": [],
+        "approvals": [],
+        "created_at": datetime.fromisoformat(spec["day"]),
+        "resolved_at": datetime.fromisoformat(spec["day"]),
     }
 
 

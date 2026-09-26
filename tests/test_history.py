@@ -12,14 +12,25 @@ def test_five_resolved_episodes_for_the_demo_group():
 
 def test_episodes_carry_the_schema_fields_readers_expect():
     for e in HISTORY:
-        for key in ("kind", "min_people", "day_type", "rsvps", "booking", "outcomes", "summary"):
+        for key in ("kind", "min_people", "day_type", "rsvps", "booking", "outcomes", "summary",
+                    "version_id", "money_requests", "approvals", "created_at", "resolved_at"):
             assert key in e, f"{e['_id']} missing {key}"
 
 
 def test_day_type_matches_the_calendar():
     for e in HISTORY:
         weekday = date.fromisoformat(e["day"]).weekday()
-        assert e["day_type"] == {5: "saturday", 6: "sunday"}.get(weekday, "weekday")
+        assert e["day_type"] == "weekend" if weekday >= 5 else "weekday"
+
+
+def test_day_types_are_only_weekday_or_weekend():
+    assert {e["day_type"] for e in HISTORY} <= {"weekday", "weekend"}
+    assert all(set(p["flake"]) == {"weekday", "weekend"} for p in PEOPLE.values())
+
+
+def test_summary_names_the_actual_weekend_day():
+    ski = next(e for e in HISTORY if e["_id"] == "ep_003")  # Sat 2026-09-05
+    assert "a Saturday" in ski["summary"]
 
 
 def test_outcomes_add_up():

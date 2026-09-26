@@ -19,7 +19,7 @@ def seed() -> None:
 
 @app.command()
 def plan(brief: str) -> None:
-    from .agent.graph import run_plan  # imported here so `flake seed` works without LLM keys
+    from .agent.graphs import run_plan  # imported here so `flake seed` works without LLM keys
 
     ep = run_plan(GROUP, brief)
     print(f"[bold]{ep['_id']}[/] booked under {ep['version_id']}: {ep.get('booking')}")
