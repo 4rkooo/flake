@@ -2,3 +2,5 @@
 .venv
 __pycache__
 .llm_cache.sqlite
+test-results
+playwright-report
