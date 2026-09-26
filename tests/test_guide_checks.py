@@ -39,6 +39,9 @@ class _Store:  # memory.py opens a LangGraph Mongo store at import
     def __enter__(self):
         return self
 
+    def __exit__(self, *_):
+        return None
+
     def put(self, ns, key, value, **_):
         self.items.append((ns, key, value))
 
@@ -187,3 +190,31 @@ def test_seven_tools():
     from flake.agent.tools import TOOLS
     assert [t.name for t in TOOLS] == ["propose_plan", "poll_rsvps", "book", "request_money",
                                        "send_message", "ask_organizer", "finish_plan"]
+
+
+def test_tick_takes_days_positionally(seeded):
+    # demo.sh runs `flake tick 7`; typer makes a defaulted param an --option unless it is an Argument
+    from typer.testing import CliRunner
+    from flake.cli import app
+    result = CliRunner().invoke(app, ["tick", "7"])
+    assert result.exit_code == 0, result.output
+
+
+def test_propose_plan_stores_day_type(seeded):
+    # the risk model groups bails by day_type, so live episodes need it like the seeded ones
+    from flake.agent.tools import propose_plan
+    memory.current_run.update({"group_id": G, "plan_id": "ep_099"})
+    propose_plan.invoke({"title": "Beach weekend", "kind": "trip", "day": "2026-10-10",
+                         "cost_per_person_usd": 120, "min_people": 3})
+    assert memory.get_episode("ep_099")["day_type"] == "weekend"
+    db.episodes.delete_one({"_id": "ep_099"})
+
+
+def test_bail_notes_go_through_the_store(seeded):
+    # raw db.notes inserts lack the store's namespace/key fields and crash MongoDBStore's startup backfill
+    db.notes.delete_many({})
+    ep = {"_id": "ep_098", "group_id": G, "title": "Karaoke", "day": "2026-10-13", "cost_per_person_usd": 30,
+          "rsvps": [{"person": "sam", "rsvp": "yes"}], "booking": {"non_refundable_for": ["alex"], "refundable_for": ["sam"]}}
+    simulator._add_note(ep, "sam", "weekday", 30)
+    assert db.notes.count_documents({}) == 0
+    assert any(k == "sam-ep_098" and "bailed on Karaoke" in v["text"] for _, k, v in memory.store.items)

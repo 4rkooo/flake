@@ -26,7 +26,7 @@ def plan(brief: str) -> None:
 
 
 @app.command()
-def tick(days: int = 7) -> None:
+def tick(days: int = typer.Argument(7)) -> None:  # Argument so `flake tick 7` works; a plain default would be --days
     for plan_id in simulator.tick(days):
         ep = memory.get_episode(plan_id)
         print(f"{plan_id}: {ep['outcomes']}")

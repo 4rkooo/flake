@@ -6,7 +6,8 @@ from flake.world import simulator as world
 def propose_plan(title: str, kind: str, day: str, cost_per_person_usd: int, min_people: int) -> str:
     """Create a plan for the group. kind is one of dinner, karaoke, trip, brunch, tickets.
     day is an ISO date. Returns the plan_id. Call this first, exactly once per plan."""
-    plan_id = memory.create_episode(title=title, kind=kind, day=day,
+    # day_type derived here (schema.md), so the risk model can split bails by weekday/weekend
+    plan_id = memory.create_episode(title=title, kind=kind, day=day, day_type=world.day_type(day),
                                     cost_per_person_usd=cost_per_person_usd, min_people=min_people)
     memory.chat("flake", f"Proposal: {title} on {day}, about ${cost_per_person_usd} each. Who's in?")
     return plan_id

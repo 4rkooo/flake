@@ -97,7 +97,8 @@ def gate(state: PlanState):
 
     # Approvals Alex has already given on this plan (written by ask_organizer).
     # Re-read every pass so a retried call can be allowed after Alex says yes.
-    approvals = memory.get_episode(state["plan_id"]).get("approvals", [])
+    # `or {}`: on the first pass the model is calling propose_plan, so the episode doesn't exist yet
+    approvals = (memory.get_episode(state["plan_id"]) or {}).get("approvals", [])
 
     rewritten = []
     for call in last.tool_calls:

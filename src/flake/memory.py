@@ -14,6 +14,7 @@ Collections used:
  semantic memory = notes. Those live elsewhere.)
 """
 
+import atexit
 from datetime import datetime, timezone
 from flake.config import db, embed   # db = Mongo database handle; embed(text) -> list[float]
 import os
@@ -27,8 +28,12 @@ current_run: dict = {}          # group_id, plan_id for the run in progress; set
 
 
 index_config = create_vector_index_config(embed=embedder, dims=int(os.environ.get("EMBEDDING_DIMS", "1536")), fields=["text"])
-store = MongoDBStore.from_conn_string(os.environ["MONGODB_URI"], db_name=os.environ.get("MONGODB_DB", "flake"),
-                                      collection_name="notes", index_config=index_config).__enter__()
+# keep the context manager referenced: if it is garbage-collected, it closes the store's
+# MongoClient and every later note write fails with "Cannot use MongoClient after close"
+_store_cm = MongoDBStore.from_conn_string(os.environ["MONGODB_URI"], db_name=os.environ.get("MONGODB_DB", "flake"),
+                                          collection_name="notes", index_config=index_config)
+store = _store_cm.__enter__()
+atexit.register(_store_cm.__exit__, None, None, None)  # close before interpreter teardown, or it prints a traceback
 
 
 def now() -> str:

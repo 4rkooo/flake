@@ -3,12 +3,12 @@
 import random
 from datetime import date, timedelta
 
+from flake import memory
 from flake.config import db, DEMO_SEED
 from flake.world.people import LATE_DAYS, ORGANIZER, PEOPLE, PREMIUM_RATE
 
-# TODO: flake/memory.py exists but does not yet expose add_note, update_episode
-# or finish_episode. The db.episodes / db.notes writes below should move to
-# Lane A's functions once those land.
+# TODO: the db.episodes writes below should move to memory.update_episode /
+# finish_episode (they exist now). Notes already go through memory.add_note.
 
 rng = random.Random(DEMO_SEED)
 
@@ -41,16 +41,10 @@ def organizer_answer(question):
 
 
 def _add_note(episode, person, dt, share):
-    db.notes.insert_one(
-        {
-            "group_id": episode["group_id"],
-            "episode_id": episode["_id"],
-            "person": person,
-            "text": (
-                f"{person} bailed on {episode['title']} ({dt}, ${share} share)"
-            ),
-        }
-    )
+    # through Lane A's store, not db.notes directly: the store keys its documents,
+    # and raw inserts make its startup backfill hit a duplicate-key error
+    memory.add_note(episode["group_id"], f"{person}-{episode['_id']}",
+                    f"{person} bailed on {episode['title']} ({dt}, ${share} share)")
 
 
 def resolve(episode):
