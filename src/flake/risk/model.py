@@ -87,8 +87,8 @@ def attendance(profiles, yes_people, min_people, sims=1000):
 
 
 if __name__ == "__main__":
-    episodes = list(db.episodes.find({"group_id": "friends", "status": "resolved"}))
-    profiles = build_profiles("friends", episodes)
+    episodes = list(db.episodes.find({"group_id": "taco-council", "status": "resolved"}))
+    profiles = build_profiles("taco-council", episodes)
 
     header = (
         f"{'person':<8}{'flake':>10}{'p_mean':>9}{'p_up90':>9}"

@@ -99,7 +99,7 @@ if __name__ == "__main__":
     from flake.config import db
 
     risk = {
-        doc["person"]: doc for doc in db.risk_profiles.find({"group_id": "friends"})
+        doc["person"]: doc for doc in db.risk_profiles.find({"group_id": "taco-council"})
     }
     print(json.dumps(propose_rules(risk, [], {}), indent=2))
     print(f"reliable: {reliable_people(risk)}")
