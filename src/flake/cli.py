@@ -1,4 +1,6 @@
 import subprocess
+import sys
+from pathlib import Path
 
 import typer
 from rich import print
@@ -14,7 +16,9 @@ GROUP = "taco-council"
 
 @app.command()
 def seed() -> None:
-    subprocess.run(["python", "scripts/seed.py"], check=True)
+    # same interpreter as the CLI, and a path that works from any cwd
+    seed_script = Path(__file__).resolve().parents[2] / "scripts" / "seed.py"
+    subprocess.run([sys.executable, str(seed_script)], check=True)
 
 
 @app.command()
@@ -37,7 +41,11 @@ def tick(days: int = 7) -> None:
 
 @app.command("retro")
 def retro_cmd(reckless: bool = False) -> None:
-    out = retro.run(GROUP, retro.RECKLESS if reckless else None)
+    try:
+        out = retro.run(GROUP, retro.RECKLESS if reckless else None)
+    except RuntimeError as e:  # a canary is still on trial
+        print(f"[red]{e}[/]")
+        raise typer.Exit(1)
 
     t = Table("friend", "n", "bails", "P(flake)", "upper 90%", "pays late", "Flake Score")
     for p, prof in out["profiles"].items():
@@ -72,7 +80,11 @@ def diff(a: str, b: str) -> None:
 
 @app.command()
 def rollback() -> None:
-    print(f"active is now {versions.rollback(GROUP)}")
+    try:
+        print(f"active is now {versions.rollback(GROUP)}")
+    except ValueError as e:
+        print(f"[red]{e}[/]")
+        raise typer.Exit(1)
 
 
 @app.command()

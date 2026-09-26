@@ -104,6 +104,9 @@ def promote(version_id: str) -> None:
 def rollback(group_id: str) -> str:
     # rolls back whatever is currently active, back to its parent
     active = get_active(group_id)
+    if not active["parent"]:
+        # checked first, or we'd retire the only active version and leave none
+        raise ValueError(f"nothing to roll back to: {active['_id']} has no parent")
     set_status(active["_id"], "rolled_back")
     set_status(active["parent"], "active")
     return active["parent"]
