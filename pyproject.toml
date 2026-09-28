@@ -15,6 +15,7 @@ dependencies = [
     "langgraph-checkpoint-mongodb>=0.5.0",
     "langgraph-store-mongodb>=0.4.0",
     "langsmith>=0.14.1",
+    "mongomock>=4.3.0",
     "numpy>=2.5.3",
     "pydantic>=2.13.5",
     "pymongo>=4.17.0",
@@ -35,6 +36,5 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "mongomock>=4.3.0",
     "pytest>=9.1.1",
 ]

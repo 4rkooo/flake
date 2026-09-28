@@ -225,6 +225,7 @@ dependencies = [
     { name = "langgraph-checkpoint-mongodb" },
     { name = "langgraph-store-mongodb" },
     { name = "langsmith" },
+    { name = "mongomock" },
     { name = "numpy" },
     { name = "pydantic" },
     { name = "pymongo" },
@@ -237,7 +238,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "mongomock" },
     { name = "pytest" },
 ]
 
@@ -250,6 +250,7 @@ requires-dist = [
     { name = "langgraph-checkpoint-mongodb", specifier = ">=0.5.0" },
     { name = "langgraph-store-mongodb", specifier = ">=0.4.0" },
     { name = "langsmith", specifier = ">=0.14.1" },
+    { name = "mongomock", specifier = ">=4.3.0" },
     { name = "numpy", specifier = ">=2.5.3" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pymongo", specifier = ">=4.17.0" },
@@ -261,10 +262,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "mongomock", specifier = ">=4.3.0" },
-    { name = "pytest", specifier = ">=9.1.1" },
-]
+dev = [{ name = "pytest", specifier = ">=9.1.1" }]
 
 [[package]]
 name = "h11"
