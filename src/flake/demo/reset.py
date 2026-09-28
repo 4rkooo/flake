@@ -72,6 +72,8 @@ def run(index_timeout: float = INDEX_TIMEOUT_S) -> dict:
     episodes_ready = None
     try:
         episodes_ready = load_script("create_indexes").main(timeout=index_timeout, progress=progress)
+    except observe.Cancelled:
+        raise       # progress() is an observation point: a reset stops here, it is not a failed index
     except Exception as e:
         progress(f"index setup skipped: {type(e).__name__}: {e}"[:200])
     notes_ready = wait_for_search_index(db.notes, "vector_index", index_timeout, progress)

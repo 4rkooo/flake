@@ -72,6 +72,8 @@ def propose(policy: dict, risk: dict, losses: list[dict], floors: dict) -> Polic
             decided["rules"] = [{**r, "reason": why} for r, why in zip(decided["rules"], words.reasons)]
         observe.emit("proposal.worded", rationale=words.rationale, reasons=words.reasons, reasons_applied=matched,
                      cache=observe.take("llm_cache", "off"))
+    except observe.Cancelled:
+        raise       # a demo reset, not a model failure: unwind here instead of taking the fallback
     except Exception as e:
         # network off: pricing's own wording. The demo labels this as the deterministic fallback.
         observe.emit("proposal.fallback", error=f"{type(e).__name__}: {e}"[:200], rationale=decided["rationale"])

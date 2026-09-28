@@ -20,6 +20,7 @@ export const EDGES: [string, string][] = [
 ];
 export const edgeId = (a: string, b: string) => `${a}->${b}`;
 const EDGE_SET = new Set(EDGES.map(([a, b]) => edgeId(a, b)));
+const POLICY_GATE = edgeId('policy', 'gate');
 
 export interface NodeActivity { count: number; last: DemoEvent | null; status: 'idle' | 'active' | 'ok' | 'warn' | 'error' }
 export interface DiagramState {
@@ -36,25 +37,31 @@ export function deriveDiagram(events: DemoEvent[]): DiagramState {
   let lit = new Set<string>();
   let current: string | null = null;
   let running = false;
+  // policy -> gate is lit apart from the step-by-step edge: from policy.loaded until the gate's
+  // first check has used it, so the moves in between (memory, agent) cannot switch it off
+  let policyLit = false;
   for (const e of events) {
     if (e.kind === 'beat.start') {
       traversed.clear();
       lit = new Set();
       current = null;
       running = true;
+      policyLit = false;
     }
     if (e.kind === 'beat.done' || e.kind === 'beat.error' || e.kind === 'beat.cancelled') {
       running = false;
       lit = new Set();
+      policyLit = false;
       if (current) nodes[current].status = nodes[current].status === 'active' ? 'ok' : nodes[current].status;
       current = null;
     }
     if (e.kind === 'policy.loaded') {
-      lit = new Set([edgeId('policy', 'gate')]);
-      traversed.add(edgeId('policy', 'gate'));
+      policyLit = true;
+      traversed.add(POLICY_GATE);
     }
     if (!e.node || !nodes[e.node]) continue;
     if (e.kind === 'node.end') {
+      if (e.node === 'gate') policyLit = false;
       if (nodes[e.node].status === 'active') nodes[e.node].status = 'ok';
       continue;
     }
@@ -66,8 +73,6 @@ export function deriveDiagram(events: DemoEvent[]): DiagramState {
       if (current && EDGE_SET.has(edgeId(current, e.node))) {
         traversed.add(edgeId(current, e.node));
         lit = new Set([edgeId(current, e.node)]);
-      } else if (e.node === 'gate' && e.kind === 'node.start') {
-        lit = new Set(lit); // keep policy -> gate lit into the gate's first check
       } else {
         lit = new Set();
       }
@@ -75,6 +80,7 @@ export function deriveDiagram(events: DemoEvent[]): DiagramState {
     }
     n.status = e.status === 'error' ? 'error' : e.status === 'warn' ? 'warn' : running ? 'active' : 'ok';
   }
+  if (policyLit) lit = new Set([...lit, POLICY_GATE]);
   return { nodes, litEdges: lit, traversed, activeNode: running ? current : null };
 }
 

@@ -15,10 +15,12 @@ Collections used:
 """
 
 import atexit
+import sys
 from datetime import datetime, timezone
 from flake.config import db, embed   # db = Mongo database handle; embed(text) -> list[float]
 from flake import observe            # optional hooks; a no-op in the CLI
 import os
+from pymongo.errors import OperationFailure
 from langgraph.store.mongodb import MongoDBStore, create_vector_index_config
 from flake.config import embedder
 
@@ -36,10 +38,12 @@ try:
     _store_cm = MongoDBStore.from_conn_string(os.environ["MONGODB_URI"], db_name=os.environ.get("MONGODB_DB", "flake"),
                                               collection_name="notes", index_config=index_config)
     store = _store_cm.__enter__()
-except Exception as _e:  # noqa: BLE001
-    # e.g. "maximum number of FTS indexes reached" on a small Atlas tier: keep notes as plain
-    # key-value memory rather than refusing to start; search_notes then reports the fallback
+except (OperationFailure, TimeoutError) as _e:
+    # Only the index itself: Atlas refused it ("maximum number of FTS indexes" on a small tier) or
+    # it is still building. Keep notes as plain key-value memory rather than refusing to start;
+    # search_notes then reports the fallback. Network, URI or auth errors still stop here.
     STORE_INDEX_ERROR = f"{type(_e).__name__}: {_e}"[:200]
+    print(f"notes store: no vector index ({STORE_INDEX_ERROR}); note search falls back to none", file=sys.stderr)
     _store_cm = MongoDBStore.from_conn_string(os.environ["MONGODB_URI"], db_name=os.environ.get("MONGODB_DB", "flake"),
                                               collection_name="notes")
     store = _store_cm.__enter__()

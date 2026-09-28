@@ -95,6 +95,7 @@ class ScriptedChatModel:
 
     def _decide(self, messages) -> list[dict]:
         brief = next((_content(m).removeprefix("Plan this: ") for m in messages if isinstance(m, HumanMessage)), "")
+        planned = parse_brief(brief)
         ai = [m for m in messages if isinstance(m, AIMessage)]
         results = {m.tool_call_id: m for m in messages if isinstance(m, ToolMessage)}
         history = [(c["name"], c["args"], results.get(c["id"])) for m in ai for c in (m.tool_calls or [])]
@@ -106,9 +107,9 @@ class ScriptedChatModel:
             return []                                   # said goodbye already: no more tool calls ends the run
         plan_ids = [_content(r) for _, r in ok("propose_plan")]
         if not plan_ids:
-            return [self._call("propose_plan", parse_brief(brief))]
+            return [self._call("propose_plan", planned)]
         plan_id = plan_ids[0]
-        title = parse_brief(brief)["title"]
+        title = planned["title"]
 
         polls = ok("poll_rsvps")
         if not polls:
@@ -118,7 +119,7 @@ class ScriptedChatModel:
         except ValueError:
             rsvps = []
         yes = [r["person"] for r in rsvps if isinstance(r, dict) and r.get("rsvp") == "yes"]
-        cost = parse_brief(brief)["cost_per_person_usd"]
+        cost = planned["cost_per_person_usd"]
 
         last_round = [(c["name"], c["args"], results.get(c["id"])) for c in (ai[-1].tool_calls or [])] if ai else []
         answers = [(a, r) for n, a, r in history if n == "ask_organizer" and r is not None]

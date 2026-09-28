@@ -100,9 +100,6 @@ def resolve(episode):
 
 
 def tick(days):
-    # Each `flake tick` is its own process, so the world always rolls from a fresh DEMO_SEED.
-    # The demo server ticks twice in one process and reseeds here to get the same draws.
-    rng.seed(DEMO_SEED)
     resolved_at = (date.today() + timedelta(days=days)).isoformat()
     resolved_ids = []
 

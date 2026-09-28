@@ -17,6 +17,8 @@ def new_session() -> str:
 
 
 def now() -> str:
+    # memory.now()'s format. Not imported from there: flake.memory opens the notes store at
+    # import, and an event journal should not need a database connection to exist.
     return datetime.now(timezone.utc).isoformat()
 
 

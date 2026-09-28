@@ -95,6 +95,7 @@ HTTP surface: `GET /api/state` (beat, pending approvals, display data, event cur
 
 ```sh
 uv run pytest                 # unit tests, plus the whole script driven through the coordinator with a scripted model
+cd frontend && npm test       # diagram/chat event folds, Node's built-in test runner
 cd frontend && npm run build && npx playwright install chromium && npm run test:e2e   # desktop and narrow layouts against --fake
 ```
 

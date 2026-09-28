@@ -1,5 +1,5 @@
 """The blockers found inspecting the demo: an unbooked run must not be marked booked, the
-world must reseed per tick inside one process, and a presenter can stand in for Alex."""
+demo must reseed the world per tick inside one process, and a presenter can stand in for Alex."""
 import random
 
 import pytest
@@ -52,14 +52,31 @@ def test_record_episode_undoes_a_finish_without_a_booking():
     assert ep["status"] == "proposed" and "without booking" in ep["incomplete_reason"]
 
 
-def test_tick_reseeds_so_two_ticks_in_one_process_match_two_cli_runs(monkeypatch):
-    # a `flake tick` is one process, so the world always rolls from DEMO_SEED; the demo server
-    # ticks twice in one process and must see the same draws
+def test_tick_keeps_drawing_from_one_stream(monkeypatch):
+    # the guide's world: one seeded generator that advances, so repeated ticks in one
+    # process (a batch loop, a test) get fresh draws rather than a replay
     import mongomock
-    monkeypatch.setattr(simulator, "db", mongomock.MongoClient().flake)   # nothing booked: only the reseed happens
-    simulator.rng.random()               # disturb the generator, as an earlier tick would
+    monkeypatch.setattr(simulator, "db", mongomock.MongoClient().flake)   # nothing booked: no draws
+    simulator.rng.random()
+    before = simulator.rng.getstate()
     simulator.tick(7)
-    assert simulator.rng.random() == random.Random(simulator.DEMO_SEED).random()
+    assert simulator.rng.getstate() == before
+
+
+def test_the_demo_ticks_from_a_fresh_seed_like_a_cli_run(monkeypatch):
+    # a `flake tick` is one process, so it always rolls from DEMO_SEED; the demo server ticks
+    # twice in one process and must see the same draws
+    from flake.demo.beats import BEATS
+    from flake.demo.coordinator import Coordinator
+    first_draw = []
+    monkeypatch.setattr(simulator, "tick", lambda days: first_draw.append(simulator.rng.random()) or [])
+    c = Coordinator()
+    try:
+        simulator.rng.random()           # disturb the generator, as an earlier tick would
+        c._run(next(i for i, b in enumerate(BEATS) if b["operation"] == "tick"))
+    finally:
+        c.close()
+    assert first_draw == [random.Random(simulator.DEMO_SEED).random()]
 
 
 def test_organizer_is_scripted_yes_unless_the_demo_injects_one():

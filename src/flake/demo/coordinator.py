@@ -12,14 +12,14 @@ import threading
 import time
 import traceback
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 
 from flake import observe
 from flake.demo import compare as compare_mod
 from flake.demo import events as translate_mod
 from flake.demo import reset as reset_mod
 from flake.demo.beats import BEATS, GROUP
-from flake.demo.journal import Journal
+from flake.demo.journal import Journal, now
 
 
 class Busy(Exception):
@@ -54,10 +54,6 @@ class Approval:
                 "decision": self.decision, "answered_at": self.answered_at}
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 def parse_question(question: str) -> tuple[str | None, dict, str | None]:
     # the gate phrases asks as "Approve <tool> <args>? Reason: <why>"
     m = re.match(r"^Approve (\w+) (\{.*\})\? Reason: (.*)$", question or "", re.S)
@@ -71,6 +67,8 @@ def parse_question(question: str) -> tuple[str | None, dict, str | None]:
 
 
 def jsonable(value):
+    # Plain JSON for the browser, not bson.json_util's extended JSON: the UI uses _id values as
+    # React keys and display text, so an ObjectId must arrive as its hex string, not {"$oid": ...}.
     if isinstance(value, dict):
         return {str(k): jsonable(v) for k, v in value.items()}
     if isinstance(value, (list, tuple, set)):
@@ -178,7 +176,7 @@ class Coordinator:
             self._last_ask = None
             self.current_node = self.current_plan_id = self.current_version_id = None
             self.beat_status, self.beat_error, self.beat_warning = "idle", None, None
-            self.last_reset_at = _now()
+            self.last_reset_at = now()
             self._start(0)
             return {"session": session, **self._beat_info()}
 
@@ -208,7 +206,7 @@ class Coordinator:
             if ap.decision is not None:
                 # a second click or a stale tab: harmless, nothing changes
                 return {"status": "already_answered", **ap.to_dict()}
-            ap.decision, ap.answered_at = decision, _now()
+            ap.decision, ap.answered_at = decision, now()
             ap.event.set()
             return {"status": "accepted", **ap.to_dict()}
 
@@ -277,7 +275,7 @@ class Coordinator:
             with self._lock:
                 for ap in self.approvals.values():
                     if ap.decision is None:     # release anyone waiting on Alex
-                        ap.decision, ap.answered_at = "cancelled", _now()
+                        ap.decision, ap.answered_at = "cancelled", now()
                         ap.event.set()
             w.join(self.JOIN_TIMEOUT_S)
             if w.is_alive():
@@ -306,6 +304,9 @@ class Coordinator:
                 from flake import memory
                 from flake.harness import canary
                 from flake.world import simulator
+                # each `flake tick` is its own process and rolls from a fresh DEMO_SEED; this server
+                # ticks twice in one process (and again after a reset), so reseed to get the same draws
+                simulator.rng.seed(simulator.DEMO_SEED)
                 resolved = simulator.tick(beat["days"])
                 stage = "canary"
                 for plan_id in resolved:
@@ -337,8 +338,10 @@ class Coordinator:
         else:
             self._record("beat.done", index=index, beat=beat, warning=warning)
         finally:
+            with self._lock:
+                last_node = self.current_node
             if self.watcher:
-                self.watcher.flush_checkpoints(self.current_node)
+                self.watcher.flush_checkpoints(last_node)
             with self._lock:
                 self.beat_status, self.beat_error, self.beat_warning = status, error, warning
                 self.current_node = None
@@ -346,12 +349,12 @@ class Coordinator:
     # ------------------------------------------------------------------ the presenter as Alex
     def _organizer(self, question: str) -> str:
         tool, args, reason = parse_question(question)
-        ask = self._last_ask or {}
         with self._lock:
+            ask = self._last_ask or {}
             self._approval_seq += 1
             ap = Approval(id=f"ap_{self._approval_seq:03d}", question=question, tool=tool or ask.get("tool"),
                           args=args or ask.get("args") or {}, reason=reason or ask.get("reason"),
-                          plan_id=self.current_plan_id, version_id=self.current_version_id, created_at=_now())
+                          plan_id=self.current_plan_id, version_id=self.current_version_id, created_at=now())
             self.approvals[ap.id] = ap
             self._last_ask = None
         self._record("approval.requested", approval_id=ap.id, question=question, tool=ap.tool, args=ap.args,
@@ -368,33 +371,37 @@ class Coordinator:
 
     # ------------------------------------------------------------------ observe -> journal
     def _on_observe(self, kind: str, fields: dict) -> None:
-        if kind == "node.start":
-            prev, self.current_node = self.current_node, translate_mod.NODE_FOR_GRAPH.get(fields.get("node"))
-            if self.watcher:
-                self.watcher.flush_checkpoints(prev)       # the saver wrote after the previous node
-        elif kind == "plan.start":
-            self.current_plan_id, self.current_version_id = fields.get("plan_id"), None
-        elif kind == "policy.loaded":
-            self.current_version_id = fields.get("version_id")
-        elif kind == "plan.end":
-            if self.watcher:
-                self.watcher.flush_checkpoints(self.current_node)
-            self.current_node = None
-        elif kind == "gate.decision" and fields.get("decision") == "ask":
-            self._last_ask = {"tool": fields.get("tool"), "args": fields.get("requested_args"),
-                              "reason": fields.get("reason"), "rule_id": fields.get("rule_id")}
-        elif kind in LEARNING_NODE:
-            self.current_node = LEARNING_NODE[kind]
-        elif kind.startswith("reset."):
-            self.current_node = None
+        # Runs on the worker and on ToolNode's tool threads (a batch of calls runs in parallel), so
+        # the fields move under the lock; the checkpoint flush and _record's pause happen outside it.
+        flush, flush_node = False, None
+        with self._lock:
+            if kind == "node.start":
+                flush, flush_node = True, self.current_node     # the saver wrote after the previous node
+                self.current_node = translate_mod.NODE_FOR_GRAPH.get(fields.get("node"))
+            elif kind == "plan.start":
+                self.current_plan_id, self.current_version_id = fields.get("plan_id"), None
+            elif kind == "policy.loaded":
+                self.current_version_id = fields.get("version_id")
+            elif kind == "plan.end":
+                flush, flush_node = True, self.current_node
+                self.current_node = None
+            elif kind == "gate.decision" and fields.get("decision") == "ask":
+                self._last_ask = {"tool": fields.get("tool"), "args": fields.get("requested_args"),
+                                  "reason": fields.get("reason"), "rule_id": fields.get("rule_id")}
+            elif kind in LEARNING_NODE:
+                self.current_node = LEARNING_NODE[kind]
+            elif kind.startswith("reset."):
+                self.current_node = None
+        if flush and self.watcher:
+            self.watcher.flush_checkpoints(flush_node)
         self._record(kind, **fields)
 
     def _record(self, kind: str, **fields) -> None:
         row = translate_mod.translate(kind, fields)
-        node = row["node"]
-        if node is None and kind in ("db.op", "db.failed"):
-            node = self.current_node
         with self._lock:
+            node = row["node"]
+            if node is None and kind in ("db.op", "db.failed"):
+                node = self.current_node
             beat = BEATS[self.beat_index] if 0 <= self.beat_index < len(BEATS) else None
             plan_id = row.get("plan_id") or self.current_plan_id
             version_id = row.get("version_id") or self.current_version_id
