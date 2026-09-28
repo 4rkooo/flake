@@ -14,6 +14,9 @@ cost_per_person_usd number
 min_people          int
 version_id          str    harness_versions._id this plan ran under
 status              str    proposed -> booked -> resolved
+turns               int    model calls the run took (written by record_episode)
+incomplete_reason   str | null   set when a run ended without a booking receipt (turn limit,
+                                  organizer declined, model gave up); status then stays "proposed"
 created_at, resolved_at   str    ISO 8601 UTC, from memory.now()
 
 rsvps                list[{person: str, rsvp: "yes"|"no"}]

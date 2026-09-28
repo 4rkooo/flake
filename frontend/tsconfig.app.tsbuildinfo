@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/components/ActivityFeed.tsx","./src/components/AgentDiagram.tsx","./src/components/ApprovalCard.tsx","./src/components/Avatar.tsx","./src/components/ChatPanel.tsx","./src/components/Evidence.tsx","./src/components/TopBar.tsx","./src/lib/api.ts","./src/lib/derive.ts","./src/lib/types.ts","./src/lib/useDemo.ts"],"version":"5.9.3"}

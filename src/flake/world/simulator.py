@@ -3,7 +3,7 @@
 import random
 from datetime import date, timedelta
 
-from flake import memory
+from flake import memory, observe
 from flake.config import db, DEMO_SEED
 from flake.world.people import LATE_DAYS, ORGANIZER, PEOPLE, PREMIUM_RATE
 
@@ -36,8 +36,22 @@ def book(episode, non_refundable_for, refundable_for):
     }
 
 
+def scripted_organizer(question):
+    return "yes"  # Alex approves everything in the CLI demo
+
+
+_organizer = scripted_organizer
+
+
+def set_organizer(fn):
+    """The visual demo swaps in a live presenter here; None restores the scripted yes.
+    The CLI never calls this, so `flake plan` keeps its simulated answer."""
+    global _organizer
+    _organizer = fn or scripted_organizer
+
+
 def organizer_answer(question):
-    return "yes"
+    return _organizer(question)
 
 
 def _add_note(episode, person, dt, share):
@@ -108,8 +122,14 @@ def tick(days):
         db.episodes.update_one(
             {"_id": episode["_id"]}, {"$set": {"status": "resolved"}}
         )
+        observe.emit("sim.resolved", plan_id=episode["_id"], title=episode.get("title"),
+                     version_id=episode.get("version_id"), day_type=day_type(episode["day"]),
+                     share=episode["cost_per_person_usd"], booking=episode.get("booking"),
+                     outcomes=outcomes, resolved_at=resolved_at, scripted=[p for p in outcomes["bailed"]
+                                                                            if SCRIPT.get(p, {}).get(episode["_id"])])
         resolved_ids.append(episode["_id"])
 
+    observe.emit("sim.tick", days=days, resolved=resolved_ids)
     return resolved_ids
 
 

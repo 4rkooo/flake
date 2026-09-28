@@ -121,6 +121,7 @@ def test_demo_lifecycle(seeded):
     ep = db.episodes.find_one({"_id": "ep_006"})
     db.episodes.update_one({"_id": "ep_006"}, {"$set": {"status": "booked",
                            "booking": simulator.book(ep, ["priya", "jordan"], ["maya", "sam"])}})
+    simulator.rng.seed(simulator.DEMO_SEED)     # as a fresh `flake tick 7` process starts; earlier tests drew from it
     simulator.tick(7)
     ep = memory.get_episode("ep_006")
     assert ep["status"] == "resolved" and "sam" in ep["outcomes"]["bailed"]

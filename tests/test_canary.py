@@ -42,3 +42,20 @@ def test_rolls_back_when_costlier_than_expected(db):
     v1, v2 = setup_canary(db)
     assert canary.evaluate(G, episode(v2, 500)) == "rolled_back"
     assert (status(v1), status(v2)) == ("active", "rolled_back")
+
+
+def test_missing_risk_profile_is_treated_as_maximally_risky_not_a_crash(db):
+    # maya RSVP'd yes but has no risk_profiles doc yet (e.g. added to the group since the
+    # last Retro's build_profiles ran) -- must not KeyError and crash the tick beat
+    db.risk_profiles.insert_many(copy.deepcopy([p for p in PROFILES if p["person"] != "maya"]))
+    v1 = versions.create(G, versions.V1_POLICY, "seed", None, created_by="seed", status="active")
+    v2 = versions.create(G, versions.V1_POLICY, "retro", None, status="canary")
+    # expected = (0.64 + 0.07 + 0.07 + 1.0 [maya, missing profile]) * 120 = 213.6
+    assert canary.evaluate(G, episode(v2, 100)) == "promoted"
+    assert versions.get(v2)["canary"]["expected_cost_usd"] == 213.6
+
+    profiles = {d["person"]: d for d in db.risk_profiles.find({"group_id": G})}
+    breakdown = canary.expected_cost_breakdown(versions.get(v1)["policy"], episode(v2, 100), profiles)
+    maya_line = next(line for line in breakdown if line["person"] == "maya")
+    assert maya_line["rate"] == 1.0
+    assert maya_line["profile_missing"] is True
