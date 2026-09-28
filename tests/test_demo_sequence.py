@@ -148,6 +148,9 @@ def test_an_approval_holds_the_protected_action_and_duplicates_are_harmless(coor
     assert wait_for(lambda: c.pending_approvals() or not c.busy(), 30) and c.pending_approvals(), (c.beat_status, c.beat_error)
     ap = c.pending_approvals()[0]
     assert ap["tool"] == "book" and memory.get_episode("ep_006").get("booking") is None      # held at ask_organizer
+    # gate.py's decision.reason doubles as ask_organizer's whole question ("Approve <tool>
+    # <args>? Reason: <why>"); the approval card must show just the "why", not the full question
+    assert ap["reason"] and "Approve" not in ap["reason"] and "? Reason:" not in ap["reason"]
     assert c.state()["next_available"] is False
     with pytest.raises(Exception):
         c.next_beat()                                                                      # other beats stay locked

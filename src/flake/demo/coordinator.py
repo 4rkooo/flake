@@ -383,8 +383,14 @@ class Coordinator:
                 flush, flush_node = True, self.current_node
                 self.current_node = None
             elif kind == "gate.decision" and fields.get("decision") == "ask":
+                # gate.py's decision.reason IS the full "Approve <tool> <args>? Reason: <why>"
+                # question for an ask (it doubles as ask_organizer's question text) -- strip the
+                # prefix back off so the approval card shows just the "why", not the whole question
+                reason = fields.get("reason") or ""
+                if "? Reason: " in reason:
+                    reason = reason.rsplit("? Reason: ", 1)[1]
                 self._last_ask = {"tool": fields.get("tool"), "args": fields.get("requested_args"),
-                                  "reason": fields.get("reason"), "rule_id": fields.get("rule_id")}
+                                  "reason": reason, "rule_id": fields.get("rule_id")}
             elif kind in LEARNING_NODE:
                 self.current_node = LEARNING_NODE[kind]
             elif kind.startswith("reset."):
