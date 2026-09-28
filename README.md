@@ -87,7 +87,7 @@ Press **Next Beat**. The first beat resets the demo database, then the beats fol
 - **Approvals.** When `ask_organizer` runs, the question appears in the chat with Approve / Decline and the tool call waits for the click. A second click on the same request is ignored. The CLI (`flake plan`) keeps its scripted "yes".
 - **Offline rehearsal.** `uv run flake-demo --fake` needs no keys or network: an in-memory database and a scripted model that books everyone non-refundable and then does what the gate tells it. The gate, risk maths, backtest and canary run for real.
 - **Pace.** Cached model calls would finish a beat in a second, so the worker holds each step on screen for a few seconds before moving on: the node stays lit, the edge animates, the row lands, then the next step runs. At Normal a plan beat takes about two minutes, the Retro about half a minute. The top bar's Pace control (Slow / Normal / Fast / Instant) scales this live, `--pace` or `FLAKE_DEMO_PACE` sets the start value, and a reset never waits for a pause.
-- **Frontend development.** `uv run flake-demo` in one terminal, `cd frontend && npm run dev` in another (Vite on :5173 proxies `/api` to :8000).
+- **Frontend development.** `uv run flake-demo` in one terminal, `cd frontend && npm run dev` in another (Vite on :5173 proxies `/api` to :8000). The Docker image below builds `frontend/dist` itself, so a local `npm run build` isn't needed to deploy.
 
 HTTP surface: `GET /api/state` (beat, pending approvals, display data, event cursor, the journal), `GET /api/events` (Server-Sent Events; `?since=&session=` or `Last-Event-ID` resumes), `POST /api/next`, `POST /api/approvals/{id}` with `{"decision": "approve"|"decline"}`, `POST /api/reset`.
 
@@ -100,6 +100,23 @@ cd frontend && npm run build && npx playwright install chromium && npm run test:
 ```
 
 If Chromium refuses to start for want of `libnss3`/`libasound2` and you cannot install packages, download them (`apt-get download libnss3 libnspr4 libasound2t64`), extract with `dpkg -x`, and run the e2e tests with `PW_CHROMIUM_LD_LIBRARY_PATH=<dir>/usr/lib/x86_64-linux-gnu`.
+
+## Deploy
+
+The demo is one long-lived stateful process (a background worker per beat, an in-memory
+event journal, an SSE stream, approvals held on a thread until the presenter clicks) --
+it needs a single always-on container, not a serverless function.
+
+```sh
+docker build -t flake-demo .
+docker run -p 8000:8000 flake-demo   # http://localhost:8000
+```
+
+The image builds the frontend itself and serves it from the same FastAPI process
+(`--fake` mode: no Atlas credentials, no LLM keys, no network). For a hosted, shareable
+link, `fly deploy` (see [fly.toml](fly.toml)) runs the same image pinned to exactly one
+machine -- `auto_stop_machines` is off and `min_machines_running` is 1, since the demo's
+state lives in that one process and cannot be split across replicas.
 
 ## Data model
 
@@ -125,20 +142,3 @@ So that the demo repeats identically, some inputs are fixed on purpose:
 - **Scripted Sam.** In the two live plans, Sam bails on cue instead of by dice roll.
 - **A reckless proposal.** `flake retro --reckless` feeds the Retro a deliberately bad proposal (no rules, caps at the floors). The backtest's negative dollar figure is real; only the proposal is staged.
 - **Replayed model calls.** Identical LLM calls are cached on disk (`.llm_cache.sqlite`), so re-running a plan replays the recorded model output instead of calling the API again. The cache is keyed on the exact prompt and model, so changing the policy, the prompt or `LLM_MODEL` produces a fresh call. The gate, the backtest and the canary are plain code and run live every time. For a cold run, delete `.llm_cache.sqlite`, or set `LLM_CACHE=0` to turn the cache off.
-
-## Visual demo (presenter view)
-
-`open demo/index.html` — no build step, no server, no dependencies.
-
-A WhatsApp-style Taco Council chat on the left, the planning and learning loops as a
-fixed diagram on the right, and a chronological activity feed with an inspector below it.
-**Next Beat** (or space) advances one beat at a time through the same eight beats as the CLI
-script; **Reset Demo** starts over. When the gate returns `ask`, the beat pauses and the
-presenter clicks Approve or Decline in the chat. Clicking an activity row pins its evidence in
-the inspector and highlights its diagram node; **Live** returns to following execution.
-
-The beats are recorded in [demo/script.js](demo/script.js): the figures shown (backtest deltas,
-clamp notes, canary expected vs realized cost, Beta posteriors) are the values the real
-`harness/` and `risk/` code produces over the seeded history, but this page does **not** call
-Python — it is a scripted replay for presenting. Wiring it to the live coordinator is a
-separate step.

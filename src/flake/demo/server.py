@@ -57,8 +57,10 @@ def ensure_notes_index(uri: str, db_name: str, timeout: float = 150) -> None:
 
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(prog="flake-demo", description="Serve the Flake visual demo locally.")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--host", default=os.environ.get("FLAKE_DEMO_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int,
+                        default=int(os.environ.get("PORT") or os.environ.get("FLAKE_DEMO_PORT") or 8000),
+                        help="reads $PORT first, for platforms that inject it (e.g. Fly.io, Render)")
     parser.add_argument("--db", help="demo database name (default: $FLAKE_DEMO_DB, else ${MONGODB_DB}_demo)")
     parser.add_argument("--fake", action="store_true",
                         help="offline rehearsal: in-memory database and a scripted model, no keys needed")
