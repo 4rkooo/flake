@@ -44,6 +44,10 @@ except (OperationFailure, TimeoutError) as _e:
     # search_notes then reports the fallback. Network, URI or auth errors still stop here.
     STORE_INDEX_ERROR = f"{type(_e).__name__}: {_e}"[:200]
     print(f"notes store: no vector index ({STORE_INDEX_ERROR}); note search falls back to none", file=sys.stderr)
+    try:
+        _store_cm.__exit__(*sys.exc_info())   # the failed attempt may have opened a MongoClient; close it
+    except Exception:
+        pass    # best-effort: don't let cleanup of the failed attempt mask the fallback
     _store_cm = MongoDBStore.from_conn_string(os.environ["MONGODB_URI"], db_name=os.environ.get("MONGODB_DB", "flake"),
                                               collection_name="notes")
     store = _store_cm.__enter__()

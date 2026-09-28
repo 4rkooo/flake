@@ -80,7 +80,7 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .btn.decline { background: #fff; border-color: #fca5a5; color: var(--red); }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: #111827; color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: var(--shadow); max-width: calc(100vw - 32px); }
+.toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); background: #111827; color: #fff; padding: 8px 14px; border-radius: 8px; font-size: 13px; z-index: 50; box-shadow: var(--shadow); max-width: calc(100vw - 32px); white-space: pre-line; }
 
 .mobile-tabs { display: none; }
 .main { flex: 1; display: grid; grid-template-columns: 40fr 60fr; min-height: 0; }

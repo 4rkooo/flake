@@ -49,7 +49,7 @@ export default function App() {
       </nav>
       <div className="main">
         <section className={`chat-pane ${pane === 'chat' ? 'on' : ''}`} data-testid="chat-pane">
-          <ChatPanel items={chat} state={demo.state} onAnswer={demo.answer} active={pane === 'chat'} typing={!!demo.state?.busy && demo.state.beat.operation === 'plan' && pending.length === 0} />
+          <ChatPanel items={chat} state={demo.state} onAnswer={demo.answer} inFlight={demo.inFlight} active={pane === 'chat'} typing={!!demo.state?.busy && demo.state.beat.operation === 'plan' && pending.length === 0} />
         </section>
         <section className={`agent-pane ${pane === 'agent' ? 'on' : ''}`} data-testid="agent-pane">
           {pending.length > 0 && (
@@ -57,8 +57,8 @@ export default function App() {
               <ShieldAlert size={16} />
               <span>Alex&rsquo;s approval needed: <b>{pending[0].tool}</b> {pending[0].args && Object.keys(pending[0].args).length ? `(${describeArgs(pending[0].tool, pending[0].args)})` : ''}</span>
               <span className="actions">
-                <button className="btn small approve" onClick={() => demo.answer(pending[0].id, 'approve')} data-testid="banner-approve">Approve</button>
-                <button className="btn small decline" onClick={() => demo.answer(pending[0].id, 'decline')} data-testid="banner-decline">Decline</button>
+                <button className="btn small approve" disabled={demo.inFlight.has(pending[0].id)} onClick={() => demo.answer(pending[0].id, 'approve')} data-testid="banner-approve">Approve</button>
+                <button className="btn small decline" disabled={demo.inFlight.has(pending[0].id)} onClick={() => demo.answer(pending[0].id, 'decline')} data-testid="banner-decline">Decline</button>
                 {pending.length > 1 && (
                   <button className="btn small" onClick={() => pending.forEach((a) => demo.answer(a.id, 'approve'))} data-testid="banner-approve-all">Approve all {pending.length}</button>
                 )}

@@ -18,12 +18,18 @@ export function describeArgs(tool: string | null, args: Record<string, unknown>)
   return entries.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join(', ');
 }
 
-export function ApprovalCard({ approval, pending, onAnswer }: { approval: Approval; pending: boolean; onAnswer: (id: string, d: 'approve' | 'decline') => void }) {
+export function ApprovalCard({ approval, pending, inFlight, onAnswer }: { approval: Approval; pending: boolean; inFlight?: boolean; onAnswer: (id: string, d: 'approve' | 'decline') => Promise<boolean> }) {
   const tool = approval.tool ?? 'this action';
   // lock the buttons on the first click: the server answers once, and the state refresh confirms it
   const [sent, setSent] = useState<'approve' | 'decline' | null>(null);
   useEffect(() => { if (!pending) setSent(null); }, [pending]);
-  const answer = (d: 'approve' | 'decline') => { if (sent) return; setSent(d); onAnswer(approval.id, d); };
+  const answer = async (d: 'approve' | 'decline') => {
+    if (sent || inFlight) return;
+    setSent(d);
+    const ok = await onAnswer(approval.id, d);
+    if (!ok) setSent(null); // failed request: unlock so the presenter can retry
+  };
+  const busy = sent || inFlight;
   return (
     <div className={`card approval ${pending ? '' : 'decided'}`} data-testid="approval-card" data-approval-id={approval.id} data-pending={pending}>
       <div className="card-title">
@@ -36,8 +42,8 @@ export function ApprovalCard({ approval, pending, onAnswer }: { approval: Approv
       {approval.reason && <div className="reason">Why the gate asks: {approval.reason}</div>}
       {pending ? (
         <div className="actions">
-          {sent ? (
-            <span className="decision"><Loader2 size={13} className="spin" /> {sent === 'approve' ? 'Approving…' : 'Declining…'}</span>
+          {busy ? (
+            <span className="decision"><Loader2 size={13} className="spin" /> {sent === 'decline' ? 'Declining…' : 'Approving…'}</span>
           ) : (
             <>
               <button className="btn approve" onClick={() => answer('approve')} data-testid="approve">Approve</button>

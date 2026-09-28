@@ -7,6 +7,14 @@ from ..risk.backtest import refundable_people
 from ..world.people import PREMIUM_RATE
 
 
+def _p_mean(profiles: dict, p: str) -> float:
+    # a person can be missing a risk profile if they were added to the group since the
+    # last Retro's build_profiles ran: treat as maximally risky rather than crashing the
+    # tick beat (conservative -- won't make the canary look artificially cheap)
+    profile = profiles.get(p)
+    return profile["flake"]["p_mean"] if profile is not None else 1.0
+
+
 def expected_cost_breakdown(policy: dict, episode: dict, profiles: dict) -> list[dict]:
     """One line per yes-RSVP: a certain premium for anyone the policy makes refundable,
     otherwise their flake probability times their share. Shown by the demo as the working."""
@@ -19,9 +27,12 @@ def expected_cost_breakdown(policy: dict, episode: dict, profiles: dict) -> list
             lines.append({"person": p, "refundable": True, "rate": PREMIUM_RATE, "share": share,
                           "expected_usd": round(PREMIUM_RATE * share, 2)})
         else:
-            p_mean = profiles[p]["flake"]["p_mean"]
-            lines.append({"person": p, "refundable": False, "rate": p_mean, "share": share,
-                          "expected_usd": round(p_mean * share, 2)})
+            p_mean = _p_mean(profiles, p)
+            line = {"person": p, "refundable": False, "rate": p_mean, "share": share,
+                    "expected_usd": round(p_mean * share, 2)}
+            if p not in profiles:
+                line["profile_missing"] = True
+            lines.append(line)
     return lines
 
 
@@ -35,7 +46,7 @@ def expected_cost(policy: dict, episode: dict, profiles: dict) -> float:
     yes = [r["person"] for r in episode["rsvps"] if r["rsvp"] == "yes"]
     total = 0.0
     for p in yes:
-        total += PREMIUM_RATE * share if p in refundable else profiles[p]["flake"]["p_mean"] * share
+        total += PREMIUM_RATE * share if p in refundable else _p_mean(profiles, p) * share
     return round(total, 2)
 
 

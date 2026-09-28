@@ -50,7 +50,9 @@ export function ActivityFeed({ events, selectedSeq, live, onSelect, onLive, acti
   }, [rows.length, live, active]);
   useEffect(() => {
     if (selectedSeq == null) return;
-    document.querySelector<HTMLElement>(`[data-seq="${selectedSeq}"]`)?.scrollIntoView({ block: 'nearest' });
+    // scoped to this panel's own scroller: Evidence.tsx's inspector root also renders
+    // a data-seq attribute with the same value, so an unscoped document query can match it instead
+    scroller.current?.querySelector<HTMLElement>(`[data-seq="${selectedSeq}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [selectedSeq]);
   return (
     <section className="feed" data-testid="feed">

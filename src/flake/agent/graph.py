@@ -197,9 +197,12 @@ def record_episode(state: PlanState):
         fields["incomplete_reason"] = ("hit the turn limit before booking" if state["turns"] >= MAX_TURNS
                                        else "the agent stopped without booking")
     memory.update_episode(state["plan_id"], fields)   # no-op if propose_plan never ran
-    observe.emit("plan.recorded", plan_id=state["plan_id"], version_id=state["version"]["_id"],
-                 status=fields["status"], incomplete_reason=fields["incomplete_reason"],
-                 turns=state["turns"], booking=ep.get("booking"))
+    if ep:
+        # only report a recording if there was an episode document to record it onto --
+        # otherwise this is a phantom journal entry for a plan that was never proposed
+        observe.emit("plan.recorded", plan_id=state["plan_id"], version_id=state["version"]["_id"],
+                     status=fields["status"], incomplete_reason=fields["incomplete_reason"],
+                     turns=state["turns"], booking=ep.get("booking"))
     observe.emit("node.end", node="record_episode", plan_id=state["plan_id"])
     return {}
 

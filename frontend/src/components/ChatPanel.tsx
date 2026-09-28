@@ -9,7 +9,7 @@ const time = (ts: string) => new Date(ts).toLocaleTimeString([], { hour: '2-digi
 const money = (x: unknown) => `$${Number(x ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const names = (xs: unknown) => (Array.isArray(xs) && xs.length ? xs.map((x) => displayName(String(x))).join(', ') : 'nobody');
 
-export function ChatPanel({ items, state, onAnswer, active = true, typing = false }: { items: ChatItem[]; state: State | null; onAnswer: (id: string, d: 'approve' | 'decline') => void; active?: boolean; typing?: boolean }) {
+export function ChatPanel({ items, state, onAnswer, inFlight, active = true, typing = false }: { items: ChatItem[]; state: State | null; onAnswer: (id: string, d: 'approve' | 'decline') => Promise<boolean>; inFlight?: Set<string>; active?: boolean; typing?: boolean }) {
   const scroller = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = scroller.current;
@@ -71,7 +71,7 @@ export function ChatPanel({ items, state, onAnswer, active = true, typing = fals
                 </div>
               );
             case 'approval':
-              return <ApprovalCard key={it.key} approval={it.approval} pending={it.pending} onAnswer={onAnswer} />;
+              return <ApprovalCard key={it.key} approval={it.approval} pending={it.pending} inFlight={inFlight?.has(it.approval.id)} onAnswer={onAnswer} />;
             default:
               return null;
           }

@@ -29,6 +29,7 @@ export function useDemo() {
   const lastSeqRef = useRef(0);
   const esRef = useRef<EventSource | null>(null);
   const timerRef = useRef<number | undefined>(undefined);
+  const [inFlight, setInFlight] = useState<Set<string>>(new Set());
 
   const refresh = useCallback(async () => {
     try {
@@ -80,6 +81,7 @@ export function useDemo() {
           setEvents([]);
           setSelectedSeq(null);
           setLive(true);
+          scheduleRefresh();
         }
         lastSeqRef.current = ev.seq;
         setEvents((prev) => (prev.length && prev[prev.length - 1].seq >= ev.seq ? mergeEvents(prev, [ev]) : [...prev, ev]));
@@ -112,11 +114,30 @@ export function useDemo() {
       try {
         await fn();
         scheduleRefresh();
+        return true;
       } catch (e) {
-        setToast((e as Error).message);
+        // concatenate rather than overwrite: concurrent failures (e.g. "Approve all")
+        // would otherwise silently clobber each other's toast message
+        setToast((prev) => (prev ? `${prev}\n${(e as Error).message}` : (e as Error).message));
+        return false;
       }
     },
     [scheduleRefresh],
+  );
+
+  const answer = useCallback(
+    async (id: string, decision: 'approve' | 'decline') => {
+      if (inFlight.has(id)) return false;
+      setInFlight((s) => new Set(s).add(id));
+      const ok = await act(() => api.answer(id, decision));
+      setInFlight((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      });
+      return ok;
+    },
+    [act, inFlight],
   );
 
   return {
@@ -126,9 +147,10 @@ export function useDemo() {
     toast,
     selectedSeq,
     live,
+    inFlight,
     next: () => act(api.next),
     reset: () => act(api.reset),
-    answer: (id: string, decision: 'approve' | 'decline') => act(() => api.answer(id, decision)),
+    answer,
     setPace: (factor: number) => act(() => api.pace(factor)),
     select: (seq: number | null) => {
       setSelectedSeq(seq);

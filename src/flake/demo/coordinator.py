@@ -6,8 +6,6 @@ One operation at a time is deliberate: the plan loop uses a global current_run a
 sequential plan ids, so two plans must never overlap. HTTP handlers only read state and
 flip flags; all work happens on the worker thread."""
 
-import ast
-import re
 import threading
 import time
 import traceback
@@ -52,18 +50,6 @@ class Approval:
         return {"id": self.id, "question": self.question, "tool": self.tool, "args": self.args, "reason": self.reason,
                 "plan_id": self.plan_id, "version_id": self.version_id, "created_at": self.created_at,
                 "decision": self.decision, "answered_at": self.answered_at}
-
-
-def parse_question(question: str) -> tuple[str | None, dict, str | None]:
-    # the gate phrases asks as "Approve <tool> <args>? Reason: <why>"
-    m = re.match(r"^Approve (\w+) (\{.*\})\? Reason: (.*)$", question or "", re.S)
-    if not m:
-        return None, {}, None
-    try:
-        args = ast.literal_eval(m.group(2))
-    except (ValueError, SyntaxError):
-        args = {}
-    return m.group(1), args if isinstance(args, dict) else {}, m.group(3).strip()
 
 
 def jsonable(value):
@@ -232,6 +218,9 @@ class Coordinator:
         canary = next((v for v in history if v["status"] == "canary"), None)
         compares = [compare_mod.compare_policies(a, b) for a, b in zip(history, history[1:])]
 
+        # NOTE: DB reads above and metadata reads below are not atomic; a reset landing between
+        # them can produce a self-inconsistent snapshot. Accepted for the demo: state() is
+        # read-only and polled every few seconds, so a torn read self-corrects on the next poll.
         with self._lock:
             beat = self._beat_info()
             pending = self.pending_approvals()
@@ -272,15 +261,22 @@ class Coordinator:
         w = self._worker
         if w and w.is_alive():
             observe.request_cancel()            # the run raises Cancelled at its next observation point
-            with self._lock:
-                for ap in self.approvals.values():
-                    if ap.decision is None:     # release anyone waiting on Alex
-                        ap.decision, ap.answered_at = "cancelled", now()
-                        ap.event.set()
-            w.join(self.JOIN_TIMEOUT_S)
-            if w.is_alive():
-                raise ResetTimeout("the running operation did not stop in time; nothing was cleared, try again")
-        observe.clear_cancel()
+            try:
+                with self._lock:
+                    for ap in self.approvals.values():
+                        if ap.decision is None:     # release anyone waiting on Alex
+                            ap.decision, ap.answered_at = "cancelled", now()
+                            ap.event.set()
+                w.join(self.JOIN_TIMEOUT_S)
+                if w.is_alive():
+                    raise ResetTimeout("the running operation did not stop in time; nothing was cleared, try again")
+            finally:
+                # always clear, even on timeout: otherwise the process-wide cancel flag stays
+                # stuck set and every later observe.emit() call raises Cancelled until the next
+                # successful _start()
+                observe.clear_cancel()
+        else:
+            observe.clear_cancel()
 
     def _run(self, index: int) -> None:
         beat = BEATS[index]
@@ -348,12 +344,13 @@ class Coordinator:
 
     # ------------------------------------------------------------------ the presenter as Alex
     def _organizer(self, question: str) -> str:
-        tool, args, reason = parse_question(question)
+        # the gate's structured fields, already captured one step earlier by _on_observe's
+        # gate.decision handler -- no need to reverse-parse the human-readable question string
         with self._lock:
             ask = self._last_ask or {}
             self._approval_seq += 1
-            ap = Approval(id=f"ap_{self._approval_seq:03d}", question=question, tool=tool or ask.get("tool"),
-                          args=args or ask.get("args") or {}, reason=reason or ask.get("reason"),
+            ap = Approval(id=f"ap_{self._approval_seq:03d}", question=question, tool=ask.get("tool"),
+                          args=ask.get("args") or {}, reason=ask.get("reason"),
                           plan_id=self.current_plan_id, version_id=self.current_version_id, created_at=now())
             self.approvals[ap.id] = ap
             self._last_ask = None
