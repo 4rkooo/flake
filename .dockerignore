@@ -9,4 +9,3 @@ frontend/test-results
 frontend/playwright-report
 **/*.tsbuildinfo
 .pytest_cache
-.claude
