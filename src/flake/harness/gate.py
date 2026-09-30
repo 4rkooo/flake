@@ -55,8 +55,14 @@ def check(tool: str, args: dict, policy: dict, risk: dict, approvals: list[dict]
             deposited = {m["person"] for m in episode.get("money_requests", []) if m.get("upfront")}
             missing = [p for p in rule["people"] if p in invited and p not in deposited]
             if missing:
+                # spell out the exact calls: given a vague reason, the model dropped the person from the booking instead
+                share = episode.get("cost_per_person_usd", 0)
+                calls = "; ".join(f'request_money(plan_id="{episode.get("_id", "")}", person="{p}", amount_usd={share}, upfront=True)'
+                                  for p in missing)
                 return Decision(
-                    "deny", args, f"call request_money(upfront=True) for {', '.join(missing)} before booking", rule["id"]
+                    "deny", args,
+                    f"{', '.join(missing)} must pay a deposit before booking. Call {calls}, then retry this same book call. "
+                    f"Do not remove {', '.join(missing)} from the booking.", rule["id"]
                 )
         if tool == "propose_plan" and t == "avoid_day_type" and simulator.day_type(args["day"]) == rule["day_type"]:
             mode, reason, rule_id = "ask", f"plans on a {rule['day_type']} need Alex's ok", rule["id"]
@@ -80,6 +86,12 @@ def check(tool: str, args: dict, policy: dict, risk: dict, approvals: list[dict]
             forecast = risk_model.attendance(risk, yes, episode.get("min_people", 1))
             if forecast["p_at_least_min"] < g["min_confidence"]:
                 problems.append(f"only {forecast['p_at_least_min']:.0%} confidence that {episode.get('min_people')} show")
+            # the guide's gate skips this floor; we enforce it so the field means something
+            ratio = forecast["expected"] / len(yes) if yes else 1
+            if ratio < g["min_expected_attendance_ratio"]:
+                problems.append(
+                    f"expected attendance {ratio:.0%} is under the {g['min_expected_attendance_ratio']:.0%} floor"
+                )
         if problems:
             mode, reason = "ask", "; ".join(problems)
 

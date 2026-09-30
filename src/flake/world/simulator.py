@@ -3,18 +3,18 @@
 import random
 from datetime import date, timedelta
 
+from flake import memory, observe
 from flake.config import db, DEMO_SEED
 from flake.world.people import LATE_DAYS, ORGANIZER, PEOPLE, PREMIUM_RATE
 
-# TODO: flake/memory.py exists but does not yet expose add_note, update_episode
-# or finish_episode. The db.episodes / db.notes writes below should move to
-# Lane A's functions once those land.
+# TODO: the db.episodes writes below should move to memory.update_episode /
+# finish_episode (they exist now). Notes already go through memory.add_note.
 
 rng = random.Random(DEMO_SEED)
 
 SCRIPT = {"sam": {"ep_006": "bail", "ep_007": "bail"}}
 
-WEEKDAY_DAY_TYPES = {5: "saturday", 6: "sunday"}
+WEEKDAY_DAY_TYPES = {5: "weekend", 6: "weekend"}  # schema.md: weekday | weekend
 
 
 def day_type(iso_day):
@@ -36,21 +36,29 @@ def book(episode, non_refundable_for, refundable_for):
     }
 
 
+def scripted_organizer(question):
+    return "yes"  # Alex approves everything in the CLI demo
+
+
+_organizer = scripted_organizer
+
+
+def set_organizer(fn):
+    """The visual demo swaps in a live presenter here; None restores the scripted yes.
+    The CLI never calls this, so `flake plan` keeps its simulated answer."""
+    global _organizer
+    _organizer = fn or scripted_organizer
+
+
 def organizer_answer(question):
-    return "yes"
+    return _organizer(question)
 
 
 def _add_note(episode, person, dt, share):
-    db.notes.insert_one(
-        {
-            "group_id": episode["group_id"],
-            "episode_id": episode["_id"],
-            "person": person,
-            "text": (
-                f"{person} bailed on {episode['title']} ({dt}, ${share} share)"
-            ),
-        }
-    )
+    # through Lane A's store, not db.notes directly: the store keys its documents,
+    # and raw inserts make its startup backfill hit a duplicate-key error
+    memory.add_note(episode["group_id"], f"{person}-{episode['_id']}",
+                    f"{person} bailed on {episode['title']} ({dt}, ${share} share)")
 
 
 def resolve(episode):
@@ -114,8 +122,14 @@ def tick(days):
         db.episodes.update_one(
             {"_id": episode["_id"]}, {"$set": {"status": "resolved"}}
         )
+        observe.emit("sim.resolved", plan_id=episode["_id"], title=episode.get("title"),
+                     version_id=episode.get("version_id"), day_type=day_type(episode["day"]),
+                     share=episode["cost_per_person_usd"], booking=episode.get("booking"),
+                     outcomes=outcomes, resolved_at=resolved_at, scripted=[p for p in outcomes["bailed"]
+                                                                            if SCRIPT.get(p, {}).get(episode["_id"])])
         resolved_ids.append(episode["_id"])
 
+    observe.emit("sim.tick", days=days, resolved=resolved_ids)
     return resolved_ids
 
 
@@ -127,7 +141,7 @@ if __name__ == "__main__":
         "group_id": "friends",
         "title": "Beach weekend",
         "day": "2026-10-03",
-        "day_type": "saturday",
+        "day_type": "weekend",
         "cost_per_person_usd": 80,
         "status": "booked",
         "summary": "Beach weekend, $80 each.",

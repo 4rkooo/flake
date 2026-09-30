@@ -1,4 +1,6 @@
 import subprocess
+import sys
+from pathlib import Path
 
 import typer
 from rich import print
@@ -14,7 +16,9 @@ GROUP = "taco-council"
 
 @app.command()
 def seed() -> None:
-    subprocess.run(["python", "scripts/seed.py"], check=True)
+    # same interpreter as the CLI, and a path that works from any cwd
+    seed_script = Path(__file__).resolve().parents[2] / "scripts" / "seed.py"
+    subprocess.run([sys.executable, str(seed_script)], check=True)
 
 
 @app.command()
@@ -22,11 +26,14 @@ def plan(brief: str) -> None:
     from .agent.graph import run_plan  # imported here so `flake seed` works without LLM keys
 
     ep = run_plan(GROUP, brief)
-    print(f"[bold]{ep['_id']}[/] booked under {ep['version_id']}: {ep.get('booking')}")
+    if ep.get("booking"):
+        print(f"[bold]{ep['_id']}[/] booked under {ep['version_id']}: {ep.get('booking')}")
+    else:   # turn limit or the model gave up: say so instead of claiming a booking
+        print(f"[bold red]{ep['_id']}[/] not booked under {ep.get('version_id')}: {ep.get('incomplete_reason')}")
 
 
 @app.command()
-def tick(days: int = 7) -> None:
+def tick(days: int = typer.Argument(7)) -> None:  # Argument so `flake tick 7` works; a plain default would be --days
     for plan_id in simulator.tick(days):
         ep = memory.get_episode(plan_id)
         print(f"{plan_id}: {ep['outcomes']}")
@@ -37,14 +44,22 @@ def tick(days: int = 7) -> None:
 
 @app.command("retro")
 def retro_cmd(reckless: bool = False) -> None:
-    out = retro.run(GROUP, retro.RECKLESS if reckless else None)
+    try:
+        out = retro.run(GROUP, retro.RECKLESS if reckless else None)
+    except RuntimeError as e:  # a canary is still on trial
+        print(f"[red]{e}[/]")
+        raise typer.Exit(1)
 
     t = Table("friend", "n", "bails", "P(flake)", "upper 90%", "pays late", "Flake Score")
     for p, prof in out["profiles"].items():
         f, l = prof["flake"], prof["pay_late"]
         t.add_row(p, str(f["n"]), str(f["k"]), f"{f['p_mean']:.2f}", f"{f['p_upper90']:.2f}", f"{l['p_mean']:.2f}", str(prof["flake_score"]))
     print(t)
-    print(out["backtest"])
+    bt = out["backtest"]
+    # the delta replays every resolved plan, so it grows as live plans resolve: narrate this line, not a memorized number
+    colour = "green" if bt["delta_usd"] >= 0 else "red"
+    print(f"backtest over {bt['episodes']} past plans: current policy ${bt['baseline_usd']:.2f}, "
+          f"proposed ${bt['proposed_usd']:.2f} -> [bold {colour}]{bt['delta_usd']:+.2f}[/]")
     print(f"[bold]{out['version_id']} -> {out['status']}[/]")
 
 
@@ -72,7 +87,11 @@ def diff(a: str, b: str) -> None:
 
 @app.command()
 def rollback() -> None:
-    print(f"active is now {versions.rollback(GROUP)}")
+    try:
+        print(f"active is now {versions.rollback(GROUP)}")
+    except ValueError as e:
+        print(f"[red]{e}[/]")
+        raise typer.Exit(1)
 
 
 @app.command()

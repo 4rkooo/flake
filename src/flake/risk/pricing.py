@@ -20,20 +20,19 @@ def reliable_people(risk):
 def propose_rules(risk, losses, policy):
     rules = []
 
-    for person in sorted(risk):
-        p_mean = risk[person]["flake"]["p_mean"]
-        if p_mean > PREMIUM_RATE:
-            rules.append(
-                {
-                    "type": "book_refundable_for",
-                    "people": [person],
-                    "reason": (
-                        f"expected loss above the {PREMIUM_RATE:.0%} premium: "
-                        f"{person} {p_mean:.0%}"
-                    ),
-                }
-            )
-    refundable_count = len(rules)
+    # one rule for everyone whose expected loss beats the premium, so the gate
+    # and audit log cite a single r1 (the guide's v2 shape)
+    refundable = [p for p in sorted(risk) if risk[p]["flake"]["p_mean"] > PREMIUM_RATE]
+    if refundable:
+        quoted = ", ".join(f"{p} {risk[p]['flake']['p_mean']:.0%}" for p in refundable)
+        rules.append(
+            {
+                "type": "book_refundable_for",
+                "people": refundable,
+                "reason": f"expected loss above the {PREMIUM_RATE:.0%} premium: {quoted}",
+            }
+        )
+    refundable_count = len(refundable)
 
     deposit = []
     auto_collect = []
@@ -99,7 +98,7 @@ if __name__ == "__main__":
     from flake.config import db
 
     risk = {
-        doc["person"]: doc for doc in db.risk_profiles.find({"group_id": "friends"})
+        doc["person"]: doc for doc in db.risk_profiles.find({"group_id": "taco-council"})
     }
     print(json.dumps(propose_rules(risk, [], {}), indent=2))
     print(f"reliable: {reliable_people(risk)}")

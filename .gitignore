@@ -1,4 +1,6 @@
 .env
 .venv
 __pycache__
-src/flake/world/simulator.py
+.llm_cache.sqlite
+test-results
+playwright-report

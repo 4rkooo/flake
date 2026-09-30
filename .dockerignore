@@ -1,0 +1,11 @@
+.env
+.venv
+.git
+__pycache__
+.llm_cache.sqlite
+frontend/node_modules
+frontend/dist
+frontend/test-results
+frontend/playwright-report
+**/*.tsbuildinfo
+.pytest_cache

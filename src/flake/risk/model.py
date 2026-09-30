@@ -2,6 +2,7 @@ import random
 
 from scipy.stats import beta as beta_dist
 
+from flake import observe
 from flake.config import db, DEMO_SEED
 from flake.risk.scores import flake_score
 from flake.world.people import PEOPLE
@@ -64,6 +65,9 @@ def build_profiles(group_id, episodes):
         db.risk_profiles.replace_one({"_id": doc["_id"]}, doc, upsert=True)
         profiles[person] = doc
 
+    observe.emit("risk.profiles", group_id=group_id, episodes=len(episodes),
+                 profiles={p: {k: v for k, v in d.items() if k != "_id"} for p, d in profiles.items()},
+                 prior={"alpha": PRIOR_ALPHA, "beta": PRIOR_BETA, "K": K})
     return profiles
 
 
@@ -79,16 +83,18 @@ def attendance(profiles, yes_people, min_people, sims=1000):
         if count >= min_people:
             hit_min += 1
 
-    return {
+    forecast = {
         "expected": total / sims,
         "p_at_least_min": hit_min / sims,
         "min_people": min_people,
     }
+    observe.emit("risk.attendance", yes_people=list(yes_people), show_probs=show_probs, sims=sims, **forecast)
+    return forecast
 
 
 if __name__ == "__main__":
-    episodes = list(db.episodes.find({"group_id": "friends", "status": "resolved"}))
-    profiles = build_profiles("friends", episodes)
+    episodes = list(db.episodes.find({"group_id": "taco-council", "status": "resolved"}))
+    profiles = build_profiles("taco-council", episodes)
 
     header = (
         f"{'person':<8}{'flake':>10}{'p_mean':>9}{'p_up90':>9}"
